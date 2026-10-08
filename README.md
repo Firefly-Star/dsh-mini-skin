@@ -1,80 +1,185 @@
-# dsh-mini-skin
+﻿# dsh-mini-skin
 
-一个**只有样式表**的 DSH Web 皮肤：配色 token + 背景图（主画布 + 侧栏）+ 全直角契约 + 字标。**没有**观察器、**没有** DOM 装饰、**没有**图标重绘、**没有**构建步骤。
+一个只注入样式表的 DSH 皮肤插件，带一个**自包含的皮肤库**。所有开关集中在 **设置 → 自定义皮肤** 一个分区里。
 
-`lib/client.js` 就是产物。
+运行时成本刻意压到最低：**0 个 `MutationObserver`**、**1 个一次性监听**（`DOMContentLoaded`）、只依赖宿主的稳定钩子（`data-slot=*`）。图片数据一律留在样式表里，切换素材只改一个 `body` 属性；行内变量只存**极小值**（rgba 颜色、字体栈、px 偏移、blob URL）。
 
-## 设计约束（改动时请守住这几条）
+---
 
-1. **0 个 MutationObserver**；全包只有 1 个一次性 `DOMContentLoaded` 监听。
-2. **CSS 里 0 个 `:has()`** —— 关系选择器跨大子树会引发全站失效传播，这是原皮肤滚动卡顿的根因。
-3. **只用宿主公开钩子**：`[data-slot=…]`、`[data-window-drag]`、`aria-keyshortcuts`、`aria-label`。**不引用生成类名**（`_0cM…` / `uHd-Xa_…`），DSH 升级不会把它写断。
-4. **只覆盖画布 token `--dsw-alias-bg-base`**，**绝不碰 `--dsw-alias-bg-layer-1/2/3`**：设置面板、菜单、卡片的填充间接来自层色（`--dsw-alias-settings-card-fill: var(--dsw-alias-bg-layer-2)`），碰了就会出现"拖滑块把设置面板也拖透明"。
-5. **滑块语义 = 背景图强度**（100% 图最清楚，0% 被画布底色盖住），不是"表面不透明度"。
-6. 唯一的宽选择器是那条 `border-radius: 0 !important` 全直角契约，属有意为之；要更保守可收敛成组件清单。
+## 安装
 
-## 生效方式
+```powershell
+# 本地目录（link：改文件即时生效，开发用）
+dsh plugin --profile web add '<绝对路径>\mini-skin'
 
-以 link 方式装进 profile，**改文件后刷新页面即可**，无需重装、无需重启、无构建步骤。
+# tarball（复制安装，工作区目录不再是运行依赖）
+npm pack --pack-destination .
+dsh plugin --profile web add '<绝对路径>\dsh-mini-skin-0.1.0.tgz'
 
-## 设置面板
+# git / npm（发布后）
+dsh plugin --profile web add 'github:<用户名>/<仓库>#path:/'
+```
 
-**设置 → 通用设置 → 背景图不透明度**（0–100，默认 52）。
+**重启语义**：客户端半边（`lib/client.js`）热更新即可；**节点半边（`lib/index.js`）改动必须重启 DSH**。皮肤库路由只在重启后存在。
 
-- 写的是 `body` 上的**行内** token，拖动时按 `requestAnimationFrame` 合并（一帧最多一次样式重算）
-- 值存 `localStorage`（键 `dsh-mini-skin:art-opacity`），刷新/重启保留
-- 面板关闭时该行卸载，**平时零成本**
+---
 
-## 可调常量（都在 `lib/client.js` 顶部）
+## 功能
 
-| 常量 | 作用 |
+### 四种皮肤状态
+
+| 状态 | 含义 |
 |---|---|
-| `BACKGROUND` | 主画布背景图，`{ light, dark }`。`IMAGES.orca*Hero` / `orca*Active`，或任意 URL / data URI / `null` |
-| `SIDEBAR_IMAGE` | 侧栏那一列的背景图，`{ light, dark }`。默认 maid-atelier 的左侧立绘 |
-| `SIDEBAR_IMAGE_SIZE` | 默认 `"100% auto"`：宽度对齐侧栏、纵向按原始比例（**不拉伸**） |
-| `SIDEBAR_IMAGE_POSITION` | 默认 `"center bottom"`：**贴最底部** |
-| `CANVAS_RGB` | 画布底色分量（alpha 由滑块给） |
-| `LIGHT_TEXT` / `DARK_TEXT` | 文字、边框、交互色等非背景 token，与滑块无关 |
-| `DEFAULT_ART_OPACITY` | 滑块初值（52） |
-| `IMAGES` | 内嵌图片（data URI），由 `_perf-probe` 的脚本生成，**不要手改** |
+| **官方皮肤** | 宿主原样：本插件的样式表、`body` 属性、行内变量**全部撤下**（插件本体仍在，设置分区照旧可用） |
+| **内置皮肤** | 出厂那套：深色→暗色场景、浅色→亮色场景、侧栏→maid-atelier 立绘 |
+| **皮肤库里的皮肤** | 插件自带目录中的 `.json` 包，名字取自包内 `name` |
+| **自定义** | 当前设置的指纹与应用皮肤时记下的指纹不符（即你改过任何一项） |
 
-## 已还原 / 已跳过（对照 `orca-link/preview/dark.png`）
+### 深浅各一套预设
 
-已还原：夜间书房场景、全直角契约、近黑配色、蓝色强调、`[DSH]` 方框字标、🔵 `LINK ACTIVE` 方点、蓝色方形发送键、直角细滚动条、侧栏立绘（换成 maid-atelier 的抠图）。
+主内容背景图 / 不透明度、侧栏背景图 / 不透明度 / 水平 / 垂直位置 **按模式各存一份**，主题切换时自动套用当前模式那一套。
 
-已跳过（附代价）：
-- 图标全部重绘成直线图形 —— 需 36.7 KB JS + 观察器
-- 预览图侧栏那张"桌前用电脑" —— 来自 761 KB 多帧状态图集，取帧属运行时逻辑
-- 峰谷定价红绿灯 —— 时间/数据逻辑
-- favicon / 启动错误页 / 设置覆层 / 场景在任务开始时交叉淡化
+面板顶部的「**正在编辑**」选择编辑哪一套：切换它会调用宿主的 `theme.setTheme()` 把界面主题**真的切过去**，所以你改什么就能立刻看到什么（等同「外观」那行，会持久化）。在某一套里改任何值也会先确保该套生效。
 
-## 工具链（`../_perf-probe/`）
+### 背景图（勾选式）
 
-| 脚本 | 用途 |
+```
+主内容
+  [x] 有背景图
+  |-- 背景图     本地文件… / （禁用项）内置素材：亮色场景（来自皮肤）
+  |   已选择本地文件：xxx.webp        <- 勾了没选时显示「尚未选择图片。」
+  |   不透明度   ----o----  [52] %
+  [ ] 有背景图   -> 素材 / 不透明度 / 位置全部隐藏，该模式素材设为「无」
+侧栏  同一套（含水平 / 垂直位置）
+```
+
+- 勾选 = 该模式素材为 `file`；取消 = `none`。存储与皮肤包格式与选择无关。
+- 素材只支持**本地图片**（系统文件选择器，图片本体存 IndexedDB）。**不支持远程 URL**：`custom` 分支仅作为旧设置的兼容兜底保留。
+- 内置素材（场景 / 立绘）**不能**在这里挑选——它们属于"皮肤"这一层；下拉里只以**禁用项**出现，告诉你"现在是什么、来自哪"。
+
+### 其它
+
+- **方形契约**（可关）：按钮、输入框、卡片、弹窗圆角归零
+- **字体**：界面字体（覆盖宿主的 `--dsw-font-family`）+ 侧栏字体（只作用于侧栏列）
+- **品牌字标**：`DSH` 方框字标 / 宿主原样
+- **LINK ACTIVE 标签**开关
+
+---
+
+## 皮肤库（插件自己的目录）
+
+节点半边把 `<DSH_HOME>/mini-skins/` 通过一条同源路由暴露给浏览器半边：
+
+```
+GET                  -> { dir, skins: [{ file, name, savedAt, bytes, ok, error }] }
+GET  ?file=<名字>     -> 该包的完整 JSON
+POST { pack }        -> 写进库（重名自动加时间戳后缀）
+DELETE ?file=<名字>   -> 删除
+```
+
+- 只处理目录里**直接的 `*.json`**；请求只能**点名文件**，不能给路径（`basename` + 白名单正则双重校验）。
+- 解析不了的文件**不隐藏**，在下拉里**标灰并给出原因**（`JSON 解析失败` / `format 不符` / `读取失败：<code>`）。
+- **导出 = 两件事都做**：下载 `<名称>-<日期>.json` **并且**存入皮肤库（状态行分别报告两边结果）。
+- **导入**：系统文件选择器读一个 `.json`，图片写回本机存储后立即套用。
+
+### 包格式（自包含）
+
+```json
+{
+  "format": "dsh-mini-skin-pack",
+  "version": 2,
+  "name": "我的皮肤",
+  "savedAt": "2026-...",
+  "shared": { "square": true, "brandMark": "dsh", "linkChip": true, "uiFont": "system", "sidebarFont": "inherit", "packName": "我的皮肤" },
+  "modes": {
+    "dark":  { "canvasImage": "dark-hero", "canvasOpacity": 52, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 },
+    "light": { "canvasImage": "light-hero", "canvasOpacity": 52, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 }
+  },
+  "images": { "sidebar:dark": "data:image/webp;base64,..." }
+}
+```
+
+- **内置素材按名字引用**（`dark-hero` / `light-hero` / `maid-left` ...），不重复打包 -> 纯内置配置的包只有几 KB。
+- **本地图片的字节内嵌**进 `images`（键为 `区域:模式`）-> 换台机器导入即用，**不需要原文件**。
+- `activeSkin`（皮肤库身份）**不进包**：由导入方在导入后决定。
+- 因此"自包含"是结构上的保证：只涉及本地图片，没有跨域 / 失效链接的可能。
+
+---
+
+## 数据与存储
+
+| 位置 | 内容 |
 |---|---|
-| `assemble.mjs` | 把 `new-factory.txt` 拼进 bundle（保留前缀里的内嵌图片） |
-| `embed-art.mjs` / `embed-maid-sidebar.mjs` | 把 webp 内嵌成 data URI |
-| `shrink-maid.py` | Pillow 降采样重编码（1 MB 无损 → 136 KB 有损） |
-| `probe-image.mjs` | 读 webp 的块类型/alpha/尺寸 |
-| `measure.mjs` | 四个动作的样式重算/帧间隔测量（需探针实例 + 隔离 Chrome） |
-| `nav-shot.mjs` / `nav-click-shot.mjs` / `test-slider.mjs` | 截图与滑块端到端验证 |
+| `localStorage['dsh-mini-skin:settings:v1']` | 设置 v2：`{ version, dark{10 项}, light{10 项}, square, brandMark, linkChip, uiFont, sidebarFont, packName, activeSkin }` |
+| `IndexedDB['dsh-mini-skin'].images` | 本地图片本体，键为 `canvas:dark` / `canvas:light` / `sidebar:dark` / `sidebar:light` |
+| `<DSH_HOME>/mini-skins/*.json` | 皮肤库 |
 
-CDP 脚本从环境变量 `DSH_PROBE_CDP` 取调试地址（Chrome 有时只绑 IPv6，用 `http://[::1]:9333`）。
+迁移：v1（扁平、无模式概念）会**同时写进两套预设**；更早的 `dsh-mini-skin:art-opacity` 单键也会被读取（**先判键存在**——`Number(null)` 是 0，曾经因此让全新安装的默认不透明度变成 0）。
 
-## 美术署名（CC BY-NC-SA 4.0，禁止商用）
+---
 
-- 主画布场景：来自 **dsh-deep-whale / ORCA LINK** —— 一创 上善，二创 Small-tailqwq → `artwork/NOTICE`
-- 侧栏立绘：来自 **dsh-deep-whale / maid-atelier** —— 一创 上善，二创 ZipZipPipe，三创 Small-tailqwq → `artwork/NOTICE-maid-atelier`
+## 文件
 
-许可正文见 `artwork/LICENSE-ARTWORK`。**代码**（`lib/` 里的 JS）是 MIT，与美术许可是两回事。
+| 路径 | 说明 |
+|---|---|
+| `lib/index.js` | **节点半边**：皮肤库目录 + `/api/dsh/mini-skins` 路由（`ctx.inject(["webServer"], ...)` + `server.register`） |
+| `lib/client.js` | **浏览器半边**（提交型产物，460 KB，含 5 张内嵌图）：样式表、生命周期、设置分区、皮肤库客户端 |
+| `package.json` | `dsh.bundle.patch` / `dsh.client` / `exports`（含 `./locale/*.json`）/ `files` 白名单 |
+| `cordis.patch.yml` | bundle patch：插入插件行 |
+| `locale/{zh,en}.json` | 插件菜单的本地化名称与简介 |
+| `assets/plugin-icon.svg` | 插件图标（自绘，无第三方美术） |
+| `artwork/` | 署名与许可 |
 
-## 性能（同一套探针脚本，空会话 577 元素，1600×900）
+---
 
-| 指标（中位） | 官方 | **官方 + mini-skin** | orca-link 皮肤 |
-|---|---:|---:|---:|
-| 输入 41 字符·样式重算 | 22.1 ms | 23.3 ms | 207.9 ms |
-| 输入·重算**次数** | 92 | **92** | 282 |
-| 左栏收放·样式重算 | 47.5 ms | 32.7 ms | 146.3 ms |
-| 空转帧间隔中位 | 8.3 ms | 8.3 ms | 8.3 ms |
+## 开发
 
-bundle 约 425 KB（其中约 412 KB 是 5 张内嵌图；逻辑约 12 KB）。
+工厂源码在 `_perf-probe/new-factory.txt`，`assemble.mjs` 把它拼到 `lib/client.js` 的图片前缀之后。**不要手改 `lib/client.js` 里那段工厂**：它每次都会被覆盖。
+
+```powershell
+node _perf-probe/assemble.mjs          # 拼接（保留 412 KB 图片前缀 + 内嵌 5 张图）
+node --check mini-skin/lib/client.js   # 语法
+```
+
+### 验证（探针）
+
+验证脚本通过 CDP 驱动一个隔离的无头 Chrome，对着一个探针 DSH 实例跑真实交互：
+
+```powershell
+# 1) 探针实例（写 ~/.dsh，需要更宽权限）
+dsh --profile web --no-open --port 0
+# 2) 隔离 Chrome（需要命名管道权限）
+chrome --headless=new --no-sandbox --remote-debugging-port=9335 --user-data-dir=<工作区>\_probe-chrome
+# 3) 跑脚本
+$env:DSH_PROBE_APP='http://127.0.0.1:<端口>/?token=<令牌>'; $env:DSH_PROBE_CDP='http://127.0.0.1:9335'
+node _perf-probe/verify-chain4.mjs
+```
+
+脚本要点（踩过的坑都在里面）：设置弹窗必须用**真实鼠标事件**（`Input.dispatchMouseEvent`）点击，`.click()` 无效；点击前要 `scrollIntoView`（面板会超出视口）；用 `<select>` 的 `value` + `change` 合成事件**驱动不了 React**。
+
+**探针的硬限制**：探针实例**切不动宿主主题**（「外观」那三个方块点了不生效），所以"切主题 -> 换预设"这条路必须由人在真实界面里验。
+
+---
+
+## 已验证 / 未验证（如实）
+
+**已在探针里实测通过**：插件装载（样式表 + `body` 属性）、画布与侧栏背景层真实绘制、侧栏定位 `0px 0px, 50% 100%`、面板渲染（7 下拉 / 4 滑块 / 4 数字框 / 11 按钮）、按模式取预设一致（含侧栏垂直偏移）、导出包生成（格式 / 命名 / 入库）、控制台**无异常**。
+
+**只有静态核查**：勾选式 UI、皮肤库路由的运行时行为（节点半边只能重启后验）、导入流程。
+
+**探针 / 实测抓出并修掉的真 bug**（留存记录）：
+
+1. 行内样式写几百 KB 的 data URI -> 图不显示、换图无效（**图片数据必须留在样式表**）
+2. 蒙版 `rgba()` 当作 `background-image` 图层 -> 整条声明失效（必须是 `linear-gradient()`）
+3. 缺失的旧键 `Number(null) === 0` -> 全新安装默认不透明度为 0
+4. 外层脚本 `const IMAGES` 在 HMR 重复求值时抛 `already been declared` -> 整份插件失效（改为可重复求值的 `window.__dshMiniSkinArt` 赋值）
+5. 受控 `<select>` 的当前值不在选项里 -> 显示第一项（"不要背景图"），再选它因"值没变"不触发
+6. 面板用 `inject` 捕获的**对象快照**初始化 -> 重新挂载后显示旧值（改为向插件取当前值）
+
+---
+
+## 许可与署名
+
+- **代码**：MIT
+- **美术**：场景图来自 `orca-link`（上善 -> Small-tailqwq），立绘来自 `maid-atelier`（上善 -> ZipZipPipe -> Small-tailqwq），均为 **CC BY-NC-SA 4.0（非商业）**。完整署名链见 `artwork/NOTICE` 与 `artwork/NOTICE-maid-atelier`，美术许可见 `artwork/LICENSE-ARTWORK`。
+- 复制本插件的图片资源时，**署名与许可必须一起带走**。
