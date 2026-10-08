@@ -73,3 +73,25 @@ node dev/close-chrome-9335.mjs
    `npm publish --registry=https://registry.npmjs.org/ --access public`
 2. **npm 已关闭“传统方式创建账号”**：`npm adduser --auth-type=legacy` 会返回 `403 / Account creation via legacy auth is unavailable`；只能走 <https://www.npmjs.com/signup>（该站在 Cloudflare 人机验证之后；无痕 + 禁用扩展、或换网络/换设备）。
 3. 若 CLI 的浏览器授权页打不开：在网站建一个 Access Token 写进本机 `~/.npmrc`（不要提交），再执行上面的 publish 命令；注意 npm 正在收紧“绕过 2FA”的令牌在发布上的使用，必要时改用 `--otp=<六位码>`。
+
+## 动画管线（从 orca-link 状态图集到皮肤）
+
+原始素材：`orca-link` 的状态图集（`assets/runtime` 里那张 1888×2360 的 webp = **8 列 × 10 行、每格 236×236**，`STATUS_ATLAS_CELL = 236`）。原皮肤靠 `MutationObserver` + JS 逐状态切行、CSS `steps(8)` 循环；我们把它**离线烘焙成动画 WebP**，运行时零 JS。
+
+```
+dev/anim/slice-atlas.py          图集 → 每行一个动画（row0..row9）
+dev/anim/build-standby-skin.py   空闲（standby，第 0 行）→ 皮肤「虎鲸动图立绘（空闲）」
+dev/anim/build-orca-replica.py   工作（working，第 2 行）→ 皮肤「虎鲸链路（复刻）」
+dev/anim/check-anim.py           校验：帧数 / 时长 / 是否真是动画
+skins/*.webp                     烘焙好的动图（standby 6 帧 3.35s / working 8 帧 0.66s）
+skins/*.json                     可直接放进 <DSH_HOME>/mini-skins/ 的皮肤包
+```
+
+关键数值（源码 `status-character.ts` 与实测）：
+
+| 项 | 值 |
+|---|---|
+| 行映射 | `standby:0  syncing:1  working:2  approval:3  input:4  review:5  complete:6  fault:7  offline:8  ready:9` |
+| 空闲帧序 | `[0,0,0,0,1,2,3,2,1]`，时长 `[700,700,700,700,130,90,110,90,130]`（一轮 3.35s） |
+| 工作帧序 | `[0..7]`，固定 83ms/帧（12fps，一轮 0.66s） |
+| 对齐 | 以 **standby 帧 0 的 alpha 质心**为全局锚点，逐帧补偿（实测 working 各帧需 +4.5…+6.4px）；值是**从图集算出来的**，图集换了要重算 |
