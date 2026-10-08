@@ -1,7 +1,6 @@
 {
   "name": "dsh-mini-skin",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
   "description": "Stylesheet-only DSH skin: background art, palette tokens, square UI contract, fonts - all in one settings section. No observers, no DOM surgery.",
   "type": "module",
   "main": "lib/index.js",
@@ -33,5 +32,23 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh": ">=0.1.7-rc.1 <0.3.0-0"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Firefly-Star/dsh-mini-skin.git"
+  },
+  "homepage": "https://github.com/Firefly-Star/dsh-mini-skin#readme",
+  "bugs": {
+    "url": "https://github.com/Firefly-Star/dsh-mini-skin/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "skin",
+    "theme",
+    "plugin"
+  ],
+  "author": "Firefly-Star"
 }
