@@ -1,0 +1,5 @@
+# dsh-mini-skin bundle patch: inserts its public dsh.client entry into the web
+# plugin roster. Same shape as the shipped skins, minus everything but CSS.
+- insert:
+    - id: ui-mini-skin
+      name: 'dsh-mini-skin'
