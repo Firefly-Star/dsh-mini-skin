@@ -134,10 +134,10 @@ DELETE ?file=<名字>   -> 删除
 
 ## 开发
 
-工厂源码在 `_perf-probe/new-factory.txt`，`assemble.mjs` 把它拼到 `lib/client.js` 的图片前缀之后。**不要手改 `lib/client.js` 里那段工厂**：它每次都会被覆盖。
+工厂源码在 `dev/new-factory.txt`，`assemble.mjs` 把它拼到 `lib/client.js` 的图片前缀之后。**不要手改 `lib/client.js` 里那段工厂**：它每次都会被覆盖。
 
 ```powershell
-node _perf-probe/assemble.mjs          # 拼接（保留 412 KB 图片前缀 + 内嵌 5 张图）
+node dev/assemble.mjs          # 拼接（保留 412 KB 图片前缀 + 内嵌 5 张图）
 node --check mini-skin/lib/client.js   # 语法
 ```
 
@@ -152,7 +152,7 @@ dsh --profile web --no-open --port 0
 chrome --headless=new --no-sandbox --remote-debugging-port=9335 --user-data-dir=<工作区>\_probe-chrome
 # 3) 跑脚本
 $env:DSH_PROBE_APP='http://127.0.0.1:<端口>/?token=<令牌>'; $env:DSH_PROBE_CDP='http://127.0.0.1:9335'
-node _perf-probe/verify-chain4.mjs
+node dev/verify-chain4.mjs
 ```
 
 脚本要点（踩过的坑都在里面）：设置弹窗必须用**真实鼠标事件**（`Input.dispatchMouseEvent`）点击，`.click()` 无效；点击前要 `scrollIntoView`（面板会超出视口）；用 `<select>` 的 `value` + `change` 合成事件**驱动不了 React**。

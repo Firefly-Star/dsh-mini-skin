@@ -1,0 +1,1234 @@
+window.__ModuleLoader__.load({
+	id: "dsh-mini-skin",
+	factory: (require) => {
+		var module = { exports: {} };
+		var exports = module.exports;
+		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+
+		const React = require("react");
+		// 图片数据由外层脚本挂到 window 上（外层用赋值而不是声明，脚本被重复求值也不会炸）。
+		const IMAGES = window.__dshMiniSkinArt;
+		// 宿主 UI 原语是平台模块。拿不到就退回原生 checkbox，不让整个分区因为一个可选依赖失效。
+		let HostSwitch = null;
+		try {
+			const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+			if (primitives !== null && typeof primitives.Switch === "function") HostSwitch = primitives.Switch;
+		} catch {
+			HostSwitch = null;
+		}
+
+		const BODY_ATTRIBUTE = "data-dsh-mini-skin";
+		const STYLE_ELEMENT_ID = "dsh-mini-skin-styles";
+		const SETTINGS_KEY = "dsh-mini-skin:settings:v1";
+		const LEGACY_OPACITY_KEY = "dsh-mini-skin:art-opacity";
+
+		// 分区与行的标识
+		const SECTION_ID = "dsh-mini-skin";
+		const SECTION_TITLE = "自定义皮肤";
+
+		// ===================== 内置可选素材 =====================
+		// 主画布 / 侧栏各自一张，用户可在设置里换。custom 用下面那个地址输入框。
+		const CANVAS_CHOICES = [
+			{ value: "dark-hero", label: "暗色场景 · 空态", image: () => IMAGES.orcaDarkHero },
+			{ value: "dark-active", label: "暗色场景 · 工作态", image: () => IMAGES.orcaDarkActive },
+			{ value: "light-hero", label: "亮色场景 · 空态", image: () => IMAGES.orcaLightHero },
+			{ value: "light-active", label: "亮色场景 · 工作态", image: () => IMAGES.orcaLightActive },
+			{ value: "none", label: "不要背景图", image: () => null },
+			{ value: "file", label: "本地文件…（系统选择器）", image: () => null },
+		];
+		const SIDEBAR_CHOICES = [
+			{ value: "maid-left", label: "maid-atelier 立绘", image: () => IMAGES.maidLeft },
+			{ value: "dark-hero", label: "orca-link 暗色场景", image: () => IMAGES.orcaDarkHero },
+			{ value: "none", label: "不要背景图", image: () => null },
+			{ value: "file", label: "本地文件…（系统选择器）", image: () => null },
+		];
+
+		/**
+		 * 素材下拉的选项。可选的只有"不要背景图 / 本地文件"，但当前值若是内置素材
+		 * （由皮肤带进来的场景或立绘），必须有一条能代表它的禁用项：受控 select 找不到
+		 * 匹配值时会显示第一项，于是面板会谎报"不要背景图"，而点它又因"值没变"不触发。
+		 */
+		const materialChoices = (choices, current) => {
+			const selectable = choices.filter((choice) => choice.value === "none" || choice.value === "file");
+			if (selectable.some((choice) => choice.value === current)) return selectable;
+			const known = choices.find((choice) => choice.value === current);
+			return [{ value: current, label: `内置素材：${known === undefined ? current : known.label}（来自皮肤）`, disabled: true }, ...selectable];
+		};
+
+		const FONT_CHOICES = [
+			{ value: "system", label: "系统默认" },
+			{ value: "serif", label: "衬线 · Georgia" },
+			{ value: "mono", label: "等宽 · 代码字体" },
+		];
+		const FONT_STACKS = {
+			serif: 'Georgia, "Times New Roman", "Songti SC", "SimSun", serif',
+			mono: '"SF Mono", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", monospace',
+		};
+		const SIDEBAR_FONT_CHOICES = [{ value: "inherit", label: "跟随界面" }, ...FONT_CHOICES];
+
+		// 深/浅各一套预设；本地图片按 "区域:模式" 存 IndexedDB。
+		const ART_KEYS = ["canvasImage", "canvasImageUrl", "canvasFileName", "canvasOpacity", "sidebarImage", "sidebarImageUrl", "sidebarFileName", "sidebarOpacity", "sidebarOffsetX", "sidebarOffsetY"];
+		const MODE_DEFAULTS = {
+			dark: { canvasImage: "dark-hero", canvasImageUrl: "", canvasFileName: "", canvasOpacity: 52, sidebarImage: "maid-left", sidebarImageUrl: "", sidebarFileName: "", sidebarOpacity: 100, sidebarOffsetX: 0, sidebarOffsetY: 0 },
+			light: { canvasImage: "light-hero", canvasImageUrl: "", canvasFileName: "", canvasOpacity: 52, sidebarImage: "maid-left", sidebarImageUrl: "", sidebarFileName: "", sidebarOpacity: 100, sidebarOffsetX: 0, sidebarOffsetY: 0 },
+		};
+		const SHARED_DEFAULTS = { square: true, brandMark: "dsh", linkChip: true, uiFont: "system", sidebarFont: "inherit", packName: "", activeSkin: { kind: "custom" } };
+
+		/** 皮肤库路由（节点半边注册；同源 fetch）。 */
+		const LIBRARY_ROUTE = "/api/dsh/mini-skins";
+
+		/** 当前设置的指纹：与"应用时记下的指纹"不一致，就说明用户已经改过 = 自定义。 */
+		const fingerprint = (settings) => {
+			const parts = [];
+			for (const mode of ["dark", "light"]) for (const key of ART_KEYS) parts.push(`${mode}.${key}=${settings[mode][key]}`);
+			for (const key of ["square", "brandMark", "linkChip", "uiFont", "sidebarFont"]) parts.push(`${key}=${settings[key]}`);
+			const text = parts.join("|");
+			let hash = 5381;
+			for (let i = 0; i < text.length; i += 1) hash = ((hash << 5) + hash + text.charCodeAt(i)) >>> 0;
+			return hash.toString(16);
+		};
+
+		/** 官方皮肤 = 宿主原样：本插件的样式与属性全部撤下。 */
+		const isOfficial = (settings) => settings.activeSkin !== null && typeof settings.activeSkin === "object" && settings.activeSkin.kind === "official";
+		const ART_SLOTS = ["canvas:dark", "canvas:light", "sidebar:dark", "sidebar:light"];
+
+		const pickArt = (source) => {
+			const out = {};
+			if (source === null || typeof source !== "object") return out;
+			for (const key of ART_KEYS) if (source[key] !== undefined) out[key] = source[key];
+			return out;
+		};
+
+		const defaultSettings = () => ({ version: 2, dark: { ...MODE_DEFAULTS.dark }, light: { ...MODE_DEFAULTS.light }, ...SHARED_DEFAULTS });
+
+		/** 读取并把旧版（扁平、无模式概念）的设置迁移成"深/浅各一套"。 */
+		const buildSettings = (stored) => {
+			const base = defaultSettings();
+			if (stored === null || typeof stored !== "object") return base;
+			const shared = {};
+			for (const key of Object.keys(SHARED_DEFAULTS)) if (stored[key] !== undefined) shared[key] = stored[key];
+			const flat = pickArt(stored);
+			const legacy = Object.keys(flat).length > 0;
+			return {
+				...base,
+				...shared,
+				dark: { ...MODE_DEFAULTS.dark, ...(legacy ? flat : pickArt(stored.dark)) },
+				light: { ...MODE_DEFAULTS.light, ...(legacy ? flat : pickArt(stored.light)) },
+			};
+		};
+
+		const DEFAULTS = {
+			canvasImage: "dark-hero",
+			canvasImageUrl: "",
+			canvasFileName: "",
+			canvasOpacity: 52,
+			sidebarImage: "maid-left",
+			sidebarImageUrl: "",
+			sidebarFileName: "",
+			sidebarOpacity: 100,
+			sidebarOffsetX: 0,
+			sidebarOffsetY: 0,
+			square: true,
+			brandMark: "dsh",
+			linkChip: true,
+			uiFont: "system",
+			sidebarFont: "inherit",
+		};
+
+		/** 画布底色分量；alpha 由"背景图不透明度"给出。 */
+		const CANVAS_RGB = { light: [250, 248, 245], dark: [8, 10, 14] };
+		const CANVAS_TOKEN = "--dsw-alias-bg-base";
+		const CANVAS_CUSTOM_VAR = "--dsh-mini-skin-canvas-custom";
+		const CANVAS_FILE_VAR = "--dsh-mini-skin-canvas-file";
+		const SIDEBAR_CUSTOM_VAR = "--dsh-mini-skin-sidebar-custom";
+		const SIDEBAR_FILE_VAR = "--dsh-mini-skin-sidebar-file";
+		const SIDEBAR_SCRIM_VAR = "--dsh-mini-skin-sidebar-scrim";
+		const SIDEBAR_FONT_VAR = "--dsh-mini-skin-sidebar-font";
+
+		// 与背景图无关、写死在样式表里的 token。
+		const LIGHT_TEXT = [
+			["--dsw-alias-label-primary", "#1d2430"],
+			["--dsw-alias-label-secondary", "#5a6678"],
+			["--dsw-alias-label-caption", "#7b8698"],
+			["--dsw-alias-border-l1", "rgba(20, 28, 44, 0.08)"],
+			["--dsw-alias-border-l2", "rgba(20, 28, 44, 0.12)"],
+			["--dsw-alias-border-l3", "rgba(20, 28, 44, 0.16)"],
+			["--dsw-alias-interactive-bg-hover", "rgba(20, 28, 44, 0.06)"],
+			["--dsw-alias-interactive-bg-active", "rgba(20, 28, 44, 0.10)"],
+		];
+		const DARK_TEXT = [
+			["--dsw-alias-label-primary", "#f2f5f9"],
+			["--dsw-alias-label-secondary", "#a8b6c8"],
+			["--dsw-alias-label-caption", "#8394a8"],
+			["--dsw-alias-border-l1", "rgba(255, 255, 255, 0.07)"],
+			["--dsw-alias-border-l2", "rgba(255, 255, 255, 0.11)"],
+			["--dsw-alias-border-l3", "rgba(255, 255, 255, 0.15)"],
+			["--dsw-alias-interactive-bg-hover", "rgba(255, 255, 255, 0.06)"],
+			["--dsw-alias-interactive-bg-active", "rgba(255, 255, 255, 0.10)"],
+			["--dsw-alias-state-business-primary", "#086cff"],
+		];
+
+		const declarations = (rows) => rows.map(([name, value]) => `${name}: ${value};`).join("\n  ");
+		const inlineVar = (name) => `var(${name})`;
+		const art = (value) => (value === null || value === undefined || value === "" ? "none" : `url("${value}")`);
+
+		// 全部依赖设置的部分都挂在 body 的属性上（data-mini-*），所以改设置只需要改属性，
+		// 不必重建样式表。图片地址与颜色通过行内自定义属性给。
+		const css = `
+body[${BODY_ATTRIBUTE}] {
+  ${CANVAS_TOKEN}: rgba(250, 248, 245, 0.62);
+  --dsh-mini-skin-art-dark-hero: ${art(IMAGES.orcaDarkHero)};
+  --dsh-mini-skin-art-dark-active: ${art(IMAGES.orcaDarkActive)};
+  --dsh-mini-skin-art-light-hero: ${art(IMAGES.orcaLightHero)};
+  --dsh-mini-skin-art-light-active: ${art(IMAGES.orcaLightActive)};
+  --dsh-mini-skin-art-maid-left: ${art(IMAGES.maidLeft)};
+  ${declarations(LIGHT_TEXT)}
+}
+
+body[${BODY_ATTRIBUTE}][data-ds-dark-theme] {
+  ${CANVAS_TOKEN}: rgba(15, 20, 32, 0.62);
+  ${declarations(DARK_TEXT)}
+}
+
+/* 画布背景图层：固定在视口上、不接收指针事件。图片数据在上面那些自定义属性里，
+   这里只按"选了哪一张"切换——行内样式只写属性名，不写几百 KB 的 data URI。 */
+body[${BODY_ATTRIBUTE}]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+}
+
+body[${BODY_ATTRIBUTE}][data-mini-canvas='dark-hero']::before { background-image: var(--dsh-mini-skin-art-dark-hero); }
+body[${BODY_ATTRIBUTE}][data-mini-canvas='dark-active']::before { background-image: var(--dsh-mini-skin-art-dark-active); }
+body[${BODY_ATTRIBUTE}][data-mini-canvas='light-hero']::before { background-image: var(--dsh-mini-skin-art-light-hero); }
+body[${BODY_ATTRIBUTE}][data-mini-canvas='light-active']::before { background-image: var(--dsh-mini-skin-art-light-active); }
+body[${BODY_ATTRIBUTE}][data-mini-canvas='custom']::before { background-image: var(--dsh-mini-skin-canvas-custom, none); }
+body[${BODY_ATTRIBUTE}][data-mini-canvas='file']::before { background-image: var(--dsh-mini-skin-canvas-file, none); }
+
+/* 侧栏那一列的背景图 + 用一层同色蒙版调它的不透明度（不改动任何层色 token）。 */
+body[${BODY_ATTRIBUTE}][data-mini-sidebar] [data-slot='sidebar.workspaces'] > * {
+  background-size: 100% 100%, 100% auto;
+  background-position: 0 0,
+    calc(50% + ${inlineVar("--dsh-mini-skin-sidebar-x")}) calc(100% - ${inlineVar("--dsh-mini-skin-sidebar-y")});
+  background-repeat: no-repeat, no-repeat;
+}
+
+body[${BODY_ATTRIBUTE}][data-mini-sidebar][data-mini-sidebar-art='maid-left'] [data-slot='sidebar.workspaces'] > * {
+  background-image: var(${SIDEBAR_SCRIM_VAR}), var(--dsh-mini-skin-art-maid-left);
+}
+
+body[${BODY_ATTRIBUTE}][data-mini-sidebar][data-mini-sidebar-art='dark-hero'] [data-slot='sidebar.workspaces'] > * {
+  background-image: var(${SIDEBAR_SCRIM_VAR}), var(--dsh-mini-skin-art-dark-hero);
+}
+
+body[${BODY_ATTRIBUTE}][data-mini-sidebar][data-mini-sidebar-art='custom'] [data-slot='sidebar.workspaces'] > * {
+  background-image: var(${SIDEBAR_SCRIM_VAR}), var(--dsh-mini-skin-sidebar-custom, none);
+}
+
+body[${BODY_ATTRIBUTE}][data-mini-sidebar][data-mini-sidebar-art='file'] [data-slot='sidebar.workspaces'] > * {
+  background-image: var(${SIDEBAR_SCRIM_VAR}), var(--dsh-mini-skin-sidebar-file, none);
+}
+
+/* 侧栏自有字体（未设置时该声明因变量无效而自动失效，回落到继承）。 */
+body[${BODY_ATTRIBUTE}][data-mini-sidebar-font] [data-slot='sidebar'] > * {
+  font-family: ${inlineVar(SIDEBAR_FONT_VAR)};
+}
+
+/* ---- 全直角契约（可在设置里关掉，回到宿主原生圆角）---- */
+body[${BODY_ATTRIBUTE}][data-mini-square] *,
+body[${BODY_ATTRIBUTE}][data-mini-square] *::before,
+body[${BODY_ATTRIBUTE}][data-mini-square] *::after {
+  border-radius: 0 !important;
+}
+
+body[${BODY_ATTRIBUTE}][data-mini-square] ::-webkit-scrollbar-thumb,
+body[${BODY_ATTRIBUTE}][data-mini-square] ::-webkit-scrollbar-track,
+body[${BODY_ATTRIBUTE}][data-mini-square] ::-webkit-scrollbar-corner {
+  border-radius: 0 !important;
+}
+
+/* ---- 字标：隐掉宿主 logo 图形，标题换成 DSH；方形信号点 + LINK ACTIVE 可关 ---- */
+body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'] [data-slot='sidebar.brand.mark'] svg {
+  display: none !important;
+}
+
+body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'] [data-slot='sidebar.brand.name'],
+body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'] [data-slot='sidebar.brand.name'] * {
+  font-size: 0 !important;
+  color: transparent !important;
+}
+
+body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'] [data-slot='sidebar.brand.name']::before {
+  content: "DSH";
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l3);
+  padding: 0 6px;
+}
+
+body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag] > button[aria-keyshortcuts='Control+Alt+N']::after {
+  content: "LINK ACTIVE";
+  margin-left: 10px;
+  padding-left: 12px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+  background-image: linear-gradient(#086cff, #086cff);
+  background-repeat: no-repeat;
+  background-position: 0 50%;
+  background-size: 7px 7px;
+}
+`;
+
+		// ===================== 生命周期（样式标签与属性归属）=====================
+		// 归属状态必须放在 window 上的单例里：热替换会新建一个模块实例（新的闭包），
+		// 若把归属记在实例闭包里，旧实例的清理就会拆掉新实例刚装上的东西——
+		// 表现就是"闪一下然后皮肤没了"。跨实例共享后，最后一个声明人退出才回收。
+		const SHARED_KEY = "__dshMiniSkinShared";
+		const shared = (window[SHARED_KEY] = window[SHARED_KEY] || { tags: new Map(), bodyClaims: new Set(), settingsClaims: new Set() });
+		const heldTags = () => new Set(shared.tags.values());
+		const originalBodyValue = document.body === null ? null : document.body.getAttribute(BODY_ATTRIBUTE);
+
+		const ensureStyle = (claimant) => {
+			const own = shared.tags.get(claimant);
+			if (own !== undefined && own.isConnected) return;
+			let tag = document.getElementById(STYLE_ELEMENT_ID);
+			// 复用上一代实例遗留的孤儿标签；仍被任何存活激活持有的绝不抢。
+			if (tag !== null && heldTags().has(tag)) tag = null;
+			if (tag === null) {
+				tag = document.createElement("style");
+				tag.id = STYLE_ELEMENT_ID;
+				tag.textContent = css;
+				document.head.appendChild(tag);
+			}
+			shared.tags.set(claimant, tag);
+		};
+
+		const activate = (claimant) => {
+			if (document.body === null) return false;
+			ensureStyle(claimant);
+			shared.bodyClaims.add(claimant);
+			if (!document.body.hasAttribute(BODY_ATTRIBUTE)) document.body.setAttribute(BODY_ATTRIBUTE, "");
+			return true;
+		};
+
+		const deactivate = (claimant) => {
+			const tag = shared.tags.get(claimant);
+			shared.tags.delete(claimant);
+			if (tag !== undefined && !heldTags().has(tag)) tag.remove();
+			shared.bodyClaims.delete(claimant);
+			if (shared.bodyClaims.size > 0 || document.body === null) return;
+			if (originalBodyValue === null) document.body.removeAttribute(BODY_ATTRIBUTE);
+			else document.body.setAttribute(BODY_ATTRIBUTE, originalBodyValue);
+		};
+
+		// ===================== 设置：读取 / 保存 / 应用 =====================
+		const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+		const isMode = () => (document.body !== null && document.body.hasAttribute("data-ds-dark-theme") ? "dark" : "light");
+		// 宿主先发 theme/change、后把主题属性写进 DOM，所以事件里读 body 会读到旧模式。
+		// 这里记住"最近一次已知的色值"（事件快照或我们自己的切换），只有完全不知道时才读 DOM。
+		let knownScheme = null;
+		const currentScheme = () => (knownScheme === "dark" || knownScheme === "light" ? knownScheme : isMode());
+
+		const readSettings = () => {
+			let stored = {};
+			try {
+				const raw = window.localStorage.getItem(SETTINGS_KEY);
+				if (raw !== null) {
+					const parsed = JSON.parse(raw);
+					if (parsed !== null && typeof parsed === "object") stored = parsed;
+				} else {
+					// 从上一版只有一条不透明度的键迁移过来。必须先判键存在：键不存在时
+					// Number(null) 是 0，会被误当成"用户把不透明度调到了 0"，全新安装就看不见图。
+					const legacyRaw = window.localStorage.getItem(LEGACY_OPACITY_KEY);
+					if (legacyRaw !== null) {
+						const legacy = Number(legacyRaw);
+						if (Number.isFinite(legacy)) stored = { canvasOpacity: legacy };
+					}
+				}
+			} catch {
+				stored = {};
+			}
+			const merged = buildSettings(stored);
+			for (const mode of ["dark", "light"]) {
+				merged[mode].canvasOpacity = clamp(Number(merged[mode].canvasOpacity) || 0, 0, 100);
+				merged[mode].sidebarOpacity = clamp(Number(merged[mode].sidebarOpacity) || 0, 0, 100);
+			}
+			return merged;
+		};
+
+		const persistSettings = (settings) => {
+			try {
+				window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+			} catch {
+				/* 隐私模式下写不进去 */
+			}
+		};
+
+		/** 把一份设置完整应用到文档：行内变量 + body 属性。 */
+		const applySettings = (claimant, settings) => {
+			const body = document.body;
+			if (body === null) return;
+			// 官方皮肤：撤下本插件的一切（样式表、属性、行内变量），但插件本体仍然活着——设置分区还在。
+			if (isOfficial(settings)) {
+				clearSettings(claimant);
+				deactivate(claimant);
+				return;
+			}
+			activate(claimant);
+			shared.settingsClaims.add(claimant);
+			const mode = currentScheme();
+			const active = settings[mode];
+
+			// 图片数据一律留在样式表里的自定义属性上，行内只写"选了哪一张"和极小的值：
+			// 几百 KB 的 data URI 写进行内样式并不可靠（上一版图不显示的根因）。
+			const canvasChoice = CANVAS_CHOICES.some((entry) => entry.value === active.canvasImage) ? active.canvasImage : "none";
+			body.setAttribute("data-mini-canvas", canvasChoice);
+			if (canvasChoice === "custom") {
+				const url = String(active.canvasImageUrl || "").trim();
+				if (url === "") body.style.removeProperty(CANVAS_CUSTOM_VAR);
+				else body.style.setProperty(CANVAS_CUSTOM_VAR, `url("${url}")`);
+			}
+			if (canvasChoice === "file") {
+				const url = fileUrls[`canvas:${mode}`];
+				if (url === null) body.style.removeProperty(CANVAS_FILE_VAR);
+				else body.style.setProperty(CANVAS_FILE_VAR, `url("${url}")`);
+			} else {
+				// 撤下/换掉背景图时必须清掉这张行内变量，别把上一张图的 blob URL 留在 DOM 上。
+				body.style.removeProperty(CANVAS_FILE_VAR);
+			}
+
+			// 主画布底色 alpha（图越强，底色越透）
+			const canvasAlpha = (100 - clamp(active.canvasOpacity, 0, 100)) / 100;
+			body.style.setProperty(CANVAS_TOKEN, `rgba(${CANVAS_RGB[mode].join(", ")}, ${canvasAlpha.toFixed(3)})`);
+
+			// 侧栏图的位置微调（px）：默认 0 = 水平居中、底边贴住下方浮雕栏的上沿。
+
+			// 行内只写很小的数值，图片本体始终留在样式表里。
+
+			body.style.setProperty("--dsh-mini-skin-sidebar-x", `${Math.round(Number(active.sidebarOffsetX) || 0)}px`);
+
+			body.style.setProperty("--dsh-mini-skin-sidebar-y", `${Math.round(Number(active.sidebarOffsetY) || 0)}px`);
+
+
+			// 侧栏：同色蒙版 alpha + 选了哪一张（同样不碰层色 token）
+			const sidebarChoice = SIDEBAR_CHOICES.some((entry) => entry.value === active.sidebarImage) ? active.sidebarImage : "none";
+			const sidebarAlpha = (100 - clamp(active.sidebarOpacity, 0, 100)) / 100;
+			if (sidebarChoice === "none") {
+				body.removeAttribute("data-mini-sidebar");
+				body.removeAttribute("data-mini-sidebar-art");
+			} else {
+				body.setAttribute("data-mini-sidebar", "");
+				body.setAttribute("data-mini-sidebar-art", sidebarChoice);
+				// 蒙版必须包成"图像"：rgba() 是颜色，直接放进 background-image 会让整条声明失效
+				// （这正是侧栏图不显示、不透明度没反应的原因）。同色 linear-gradient 才是图像。
+				const scrimColor = `rgba(${CANVAS_RGB[mode].join(", ")}, ${sidebarAlpha.toFixed(3)})`;
+				body.style.setProperty(SIDEBAR_SCRIM_VAR, `linear-gradient(${scrimColor}, ${scrimColor})`);
+				if (sidebarChoice === "custom") {
+					const url = String(active.sidebarImageUrl || "").trim();
+					if (url === "") body.style.removeProperty(SIDEBAR_CUSTOM_VAR);
+					else body.style.setProperty(SIDEBAR_CUSTOM_VAR, `url("${url}")`);
+				}
+				if (sidebarChoice === "file") {
+					const url = fileUrls[`sidebar:${mode}`];
+					if (url === null) body.style.removeProperty(SIDEBAR_FILE_VAR);
+					else body.style.setProperty(SIDEBAR_FILE_VAR, `url("${url}")`);
+				} else {
+					body.style.removeProperty(SIDEBAR_FILE_VAR);
+				}
+			}
+
+			// 字体
+			const uiStack = FONT_STACKS[settings.uiFont];
+			if (uiStack === undefined) body.style.removeProperty("--dsw-font-family");
+			else body.style.setProperty("--dsw-font-family", uiStack);
+			const sidebarStack = FONT_STACKS[settings.sidebarFont];
+			if (sidebarStack === undefined) {
+				body.removeAttribute("data-mini-sidebar-font");
+				body.style.removeProperty(SIDEBAR_FONT_VAR);
+			} else {
+				body.setAttribute("data-mini-sidebar-font", "");
+				body.style.setProperty(SIDEBAR_FONT_VAR, sidebarStack);
+			}
+
+			// 造型开关
+			body.toggleAttribute("data-mini-square", settings.square === true);
+			body.toggleAttribute("data-mini-chip", settings.linkChip === true);
+			body.setAttribute("data-mini-brand", settings.brandMark === "host" ? "host" : "dsh");
+		};
+
+		/** 卸载时收回本次激活写入的行内属性；还有别的激活活着就不动。 */
+		const clearSettings = (claimant) => {
+			shared.settingsClaims.delete(claimant);
+			const body = document.body;
+			if (body === null || shared.settingsClaims.size > 0) return;
+			for (const name of [CANVAS_CUSTOM_VAR, CANVAS_FILE_VAR, SIDEBAR_CUSTOM_VAR, SIDEBAR_FILE_VAR, CANVAS_TOKEN, SIDEBAR_SCRIM_VAR, SIDEBAR_FONT_VAR, "--dsh-mini-skin-sidebar-x", "--dsh-mini-skin-sidebar-y", "--dsw-font-family"]) {
+				body.style.removeProperty(name);
+			}
+			for (const slot of ART_SLOTS) {
+				if (fileUrls[slot] !== null) URL.revokeObjectURL(fileUrls[slot]);
+				fileUrls[slot] = null;
+			}
+			for (const name of ["data-mini-canvas", "data-mini-sidebar", "data-mini-sidebar-art", "data-mini-sidebar-font", "data-mini-square", "data-mini-chip", "data-mini-brand"]) {
+				body.removeAttribute(name);
+			}
+		};
+
+		// ===================== 本地图片：系统文件选择器 + IndexedDB =====================
+		// localStorage 装不下几 MB 的图，所以文件本体存 IndexedDB，内存里只留 blob URL。
+		const fileUrls = { "canvas:dark": null, "canvas:light": null, "sidebar:dark": null, "sidebar:light": null };
+
+		const openImageDatabase = () =>
+			new Promise((resolve, reject) => {
+				const request = window.indexedDB.open("dsh-mini-skin", 1);
+				request.onupgradeneeded = () => {
+					if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images");
+				};
+				request.onsuccess = () => resolve(request.result);
+				request.onerror = () => reject(request.error);
+			});
+
+		const storeImage = async (key, blob) => {
+			const db = await openImageDatabase();
+			await new Promise((resolve, reject) => {
+				const tx = db.transaction("images", "readwrite");
+				tx.objectStore("images").put(blob, key);
+				tx.oncomplete = () => resolve();
+				tx.onerror = () => reject(tx.error);
+			});
+			db.close();
+		};
+
+		const readImage = async (key) => {
+			const db = await openImageDatabase();
+			const blob = await new Promise((resolve, reject) => {
+				const tx = db.transaction("images", "readonly");
+				const request = tx.objectStore("images").get(key);
+				request.onsuccess = () => resolve(request.result === undefined ? null : request.result);
+				request.onerror = () => reject(request.error);
+			});
+			db.close();
+			return blob;
+		};
+
+		/** 系统文件选择器：Chrome 走 showOpenFilePicker（资源管理器那种弹窗），其余退回 <input type=file>。 */
+		const pickImageFile = async () => {
+			try {
+				if (typeof window.showOpenFilePicker === "function") {
+					const handles = await window.showOpenFilePicker({
+						multiple: false,
+						types: [{ description: "图片", accept: { "image/*": [".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp"] } }],
+					});
+					if (handles.length === 0) return null;
+					return await handles[0].getFile();
+				}
+			} catch (error) {
+				if (error !== null && error.name === "AbortError") return null; // 用户取消
+			}
+			return await new Promise((resolve) => {
+				const input = document.createElement("input");
+				input.type = "file";
+				input.accept = "image/*";
+				input.style.display = "none";
+				input.addEventListener("change", () => {
+					const file = input.files !== null && input.files.length > 0 ? input.files[0] : null;
+					input.remove();
+					resolve(file);
+				}, { once: true });
+				input.addEventListener("cancel", () => { input.remove(); resolve(null); }, { once: true });
+				document.body.appendChild(input);
+				input.click();
+			});
+		};
+
+		/** 弹选择器并把文件收进 IndexedDB；返回文件名，取消返回 null。 */
+		const adoptLocalFile = async (slot) => {
+			const file = await pickImageFile();
+			if (file === null) return null;
+			try {
+				await storeImage(slot, file);
+			} catch {
+				/* 隐私模式或配额不足：本次仍可使用，只是不持久 */
+			}
+			if (fileUrls[slot] !== null) URL.revokeObjectURL(fileUrls[slot]);
+			fileUrls[slot] = URL.createObjectURL(file);
+			return file.name;
+		};
+
+		// ===================== 皮肤包：导出 / 导入（只涉及本地图片，因此一定自包含）=====================
+		const PACK_FORMAT = "dsh-mini-skin-pack";
+		const PACK_VERSION = 2;
+
+		const blobToDataUrl = (blob) =>
+			new Promise((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = () => resolve(String(reader.result));
+				reader.onerror = () => reject(reader.error);
+				reader.readAsDataURL(blob);
+			});
+
+		const dataUrlToBlob = async (dataUrl) => (await fetch(dataUrl)).blob();
+
+		/** 系统文件选择器（只收 .json）：与选图同一套机制。 */
+		const pickPackFile = async () => {
+			try {
+				if (typeof window.showOpenFilePicker === "function") {
+					const handles = await window.showOpenFilePicker({
+						multiple: false,
+						types: [{ description: "皮肤包", accept: { "application/json": [".json"] } }],
+					});
+					if (handles.length === 0) return null;
+					return await handles[0].getFile();
+				}
+			} catch (error) {
+				if (error !== null && error.name === "AbortError") return null;
+			}
+			return await new Promise((resolve) => {
+				const input = document.createElement("input");
+				input.type = "file";
+				input.accept = "application/json,.json";
+				input.style.display = "none";
+				input.addEventListener("change", () => {
+					const file = input.files !== null && input.files.length > 0 ? input.files[0] : null;
+					input.remove();
+					resolve(file);
+				}, { once: true });
+				input.addEventListener("cancel", () => { input.remove(); resolve(null); }, { once: true });
+				document.body.appendChild(input);
+				input.click();
+			});
+		};
+
+		const downloadText = (filename, text) => {
+			const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = filename;
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+			window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+		};
+
+		/** 收集成包：内置图按名字引用，只把本地图片的字节内嵌进 images。 */
+		const buildPack = async (settings) => {
+			const images = {};
+			let bytes = 0;
+			for (const slot of ART_SLOTS) {
+				const [area, mode] = slot.split(":");
+				const choice = area === "canvas" ? settings[mode].canvasImage : settings[mode].sidebarImage;
+				if (choice !== "file") continue;
+				let blob = null;
+				try { blob = await readImage(slot); } catch { blob = null; }
+				if (blob === null) continue;
+				images[slot] = await blobToDataUrl(blob);
+				bytes += blob.size;
+			}
+			const shared = {};
+			for (const key of Object.keys(SHARED_DEFAULTS)) {
+				// 皮肤库身份不进包：由导入方在导入后自己决定。
+				if (key === "activeSkin") continue;
+				shared[key] = settings[key];
+			}
+			return {
+				pack: {
+					format: PACK_FORMAT,
+					version: PACK_VERSION,
+					name: settings.packName === "" ? "dsh-mini-skin" : settings.packName,
+					savedAt: new Date().toISOString(),
+					shared,
+					modes: { dark: { ...settings.dark }, light: { ...settings.light } },
+					images,
+				},
+				count: Object.keys(images).length,
+				bytes,
+			};
+		};
+
+		const exportPack = async (settings) => {
+			const { pack, count, bytes } = await buildPack(settings);
+			const safe = String(pack.name).replace(/[^\w\u4e00-\u9fa5.-]+/g, "_").slice(0, 48) || "dsh-mini-skin";
+			downloadText(`${safe}-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(pack, null, 1));
+			return `已导出「${pack.name}」：内置图按名引用，另内嵌 ${count} 张本地图（${(bytes / 1048576).toFixed(2)} MB）`;
+		};
+
+		const importPack = async () => {
+			const file = await pickPackFile();
+			if (file === null) return null;
+			const parsed = JSON.parse(await file.text());
+			if (parsed === null || typeof parsed !== "object" || parsed.format !== PACK_FORMAT) throw new Error("不是 dsh-mini-skin 皮肤包");
+			const images = parsed.images !== null && typeof parsed.images === "object" ? parsed.images : {};
+			let restored = 0;
+			for (const slot of ART_SLOTS) {
+				const dataUrl = images[slot];
+				if (typeof dataUrl !== "string" || dataUrl === "") continue;
+				try {
+					const blob = await dataUrlToBlob(dataUrl);
+					await storeImage(slot, blob);
+					if (fileUrls[slot] !== null) URL.revokeObjectURL(fileUrls[slot]);
+					fileUrls[slot] = URL.createObjectURL(blob);
+					restored += 1;
+				} catch {
+					/* 单张失败不影响其余 */
+				}
+			}
+			const modes = parsed.modes !== null && typeof parsed.modes === "object" ? parsed.modes : {};
+			const next = buildSettings({
+				...(parsed.shared !== null && typeof parsed.shared === "object" ? parsed.shared : {}),
+				dark: modes.dark,
+				light: modes.light,
+				packName: typeof parsed.name === "string" ? parsed.name : "",
+			});
+			return { settings: next, message: `已导入「${next.packName === "" ? "未命名" : next.packName}」：恢复 ${restored} 张本地图` };
+		};
+
+		// ===================== 皮肤库（插件自带目录，经节点半边读取）=====================
+		const fetchLibrary = async () => {
+			const response = await fetch(LIBRARY_ROUTE, { credentials: "same-origin" });
+			if (!response.ok) throw new Error(`皮肤库读取失败（HTTP ${response.status}）`);
+			const payload = await response.json();
+			return { dir: typeof payload.dir === "string" ? payload.dir : "", skins: Array.isArray(payload.skins) ? payload.skins : [] };
+		};
+
+		const readLibrarySkin = async (file) => {
+			const response = await fetch(`${LIBRARY_ROUTE}?file=${encodeURIComponent(file)}`, { credentials: "same-origin" });
+			if (!response.ok) throw new Error(`读取「${file}」失败（HTTP ${response.status}）`);
+			return await response.json();
+		};
+
+		const saveToLibrary = async (pack) => {
+			const response = await fetch(LIBRARY_ROUTE, {
+				method: "POST",
+				credentials: "same-origin",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ pack }),
+			});
+			if (!response.ok) throw new Error(`存入皮肤库失败（HTTP ${response.status}）`);
+			return await response.json();
+		};
+
+		/** 应用一个皮肤包：图片写回本机存储、设置套用、并记住指纹。 */
+		const applySkinPack = async (pack, identity) => {
+			const images = pack.images !== null && typeof pack.images === "object" ? pack.images : {};
+			let restored = 0;
+			for (const slot of ART_SLOTS) {
+				const dataUrl = images[slot];
+				if (typeof dataUrl !== "string" || dataUrl === "") continue;
+				try {
+					const blob = await dataUrlToBlob(dataUrl);
+					await storeImage(slot, blob);
+					if (fileUrls[slot] !== null) URL.revokeObjectURL(fileUrls[slot]);
+					fileUrls[slot] = URL.createObjectURL(blob);
+					restored += 1;
+				} catch {
+					/* 单张失败不影响其余 */
+				}
+			}
+			const modes = pack.modes !== null && typeof pack.modes === "object" ? pack.modes : {};
+			const next = buildSettings({
+				...(pack.shared !== null && typeof pack.shared === "object" ? pack.shared : {}),
+				dark: modes.dark,
+				light: modes.light,
+				packName: typeof pack.name === "string" ? pack.name : "",
+			});
+			next.activeSkin = {
+				kind: "pack",
+				file: identity.file,
+				name: next.packName === "" ? identity.file : next.packName,
+				hash: fingerprint(next),
+			};
+			return { settings: next, restored };
+		};
+
+		// ===================== 设置面板的一行 =====================
+		const ROW_STYLE = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", padding: "2px 0" };
+		const ROW_TEXT_STYLE = { display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 };
+		const TITLE_STYLE = { fontSize: "14px", lineHeight: "20px", color: "var(--dsw-alias-label-primary)" };
+		const DESC_STYLE = { fontSize: "12px", lineHeight: "18px", color: "var(--dsw-alias-label-caption)" };
+		const CONTROL_STYLE = { display: "flex", alignItems: "center", gap: "10px", flex: "none" };
+		const RANGE_STYLE = { width: "152px", accentColor: "var(--dsw-alias-state-business-primary)" };
+		const VALUE_STYLE = { fontSize: "12px", fontVariantNumeric: "tabular-nums", color: "var(--dsw-alias-label-secondary)", width: "38px", textAlign: "right" };
+		const SELECT_STYLE = {
+			minWidth: "168px",
+			padding: "4px 8px",
+			fontSize: "13px",
+			color: "var(--dsw-alias-label-primary)",
+			background: "var(--dsw-alias-bg-layer-2)",
+			border: "1px solid var(--dsw-alias-border-l2)",
+		};
+		const INPUT_STYLE = { ...SELECT_STYLE, width: "260px" };
+		const LIST_STYLE = { display: "flex", flexDirection: "column", gap: "14px" };
+		const GROUP_STYLE = { display: "flex", flexDirection: "column", gap: "12px" };
+		const GROUP_TITLE_STYLE = { fontSize: "12px", letterSpacing: "0.08em", color: "var(--dsw-alias-label-caption)", marginTop: "4px" };
+
+		const Row = (title, desc, control) =>
+			React.createElement(
+				"div",
+				{ style: ROW_STYLE },
+				React.createElement(
+					"div",
+					{ style: ROW_TEXT_STYLE },
+					React.createElement("div", { style: TITLE_STYLE }, title),
+					desc === null ? null : React.createElement("div", { style: DESC_STYLE }, desc),
+				),
+				React.createElement("div", { style: CONTROL_STYLE }, control),
+			);
+
+		const Select = (value, choices, onChange) =>
+			React.createElement(
+				"select",
+				{ value, style: SELECT_STYLE, onChange: (event) => onChange(event.currentTarget.value) },
+				choices.map((choice) => React.createElement("option", { key: choice.value, value: choice.value, disabled: choice.disabled === true }, choice.label)),
+			);
+
+		const Slider = (value, onChange) =>
+			React.createElement("input", {
+				type: "range",
+				min: 0,
+				max: 100,
+				step: 1,
+				value,
+				style: RANGE_STYLE,
+				onChange: (event) => onChange(Number(event.currentTarget.value)),
+			});
+
+		// 带范围的滑块（位置用 px，跟 0–100 的不透明度滑块分开）。
+
+		const RangeSlider = (value, min, max, onChange) =>
+
+			React.createElement("input", { type: "range", min, max, step: 1, value, style: RANGE_STYLE, onChange: (event) => onChange(Number(event.currentTarget.value)) });
+
+		const OFFSET_VALUE_STYLE = { ...VALUE_STYLE, width: "54px" };
+
+
+		const NUMBER_STYLE = { width: "60px", padding: "3px 6px", fontSize: "12px", fontVariantNumeric: "tabular-nums", textAlign: "right", color: "var(--dsw-alias-label-primary)", background: "var(--dsw-alias-bg-layer-2)", border: "1px solid var(--dsw-alias-border-l2)" };
+		const UNIT_STYLE = { fontSize: "12px", color: "var(--dsw-alias-label-caption)", width: "16px" };
+
+		/** 与拉条双向同步的数值框：输入过程中不提交，失焦或回车才夹到范围并写回。 */
+		function NumberBox(props) {
+			const [draft, setDraft] = React.useState(String(props.value));
+			React.useEffect(() => {
+				setDraft(String(props.value));
+			}, [props.value]);
+			const commit = (raw) => {
+				// 清空输入框后失焦视为"放弃修改"，不要把它当成 0。
+				if (String(raw).trim() === "") {
+					setDraft(String(props.value));
+					return;
+				}
+				const parsed = Number(raw);
+				const next = Number.isFinite(parsed) ? Math.min(props.max, Math.max(props.min, Math.round(parsed))) : props.value;
+				setDraft(String(next));
+				props.onCommit(next);
+			};
+			return React.createElement(
+				React.Fragment,
+				null,
+				React.createElement("input", {
+					type: "number",
+					min: props.min,
+					max: props.max,
+					step: 1,
+					value: draft,
+					"aria-label": props.label,
+					style: NUMBER_STYLE,
+					onChange: (event) => setDraft(event.currentTarget.value),
+					onBlur: (event) => commit(event.currentTarget.value),
+					onKeyDown: (event) => {
+						if (event.key === "Enter") {
+							commit(event.currentTarget.value);
+							event.currentTarget.blur();
+						}
+					},
+				}),
+				props.unit === undefined || props.unit === null ? null : React.createElement("span", { style: UNIT_STYLE }, props.unit),
+			);
+		}
+
+		const Toggle = (checked, label, onChange) => {
+			if (HostSwitch !== null) return React.createElement(HostSwitch, { checked, onChange, label });
+			return React.createElement("input", {
+				type: "checkbox",
+				checked,
+				"aria-label": label,
+				style: { accentColor: "var(--dsw-alias-state-business-primary)" },
+				onChange: (event) => onChange(event.currentTarget.checked),
+			});
+		};
+
+		const UrlInput = (value, placeholder, onChange) =>
+			React.createElement("input", {
+				type: "text",
+				value,
+				placeholder,
+				spellCheck: false,
+				style: INPUT_STYLE,
+				onChange: (event) => onChange(event.currentTarget.value),
+			});
+
+		/** 「自定义皮肤」分区。只有设置弹窗打开时才挂载；关掉即卸载，平时零成本。 */
+		function CustomSkinPanel(props) {
+			const [settings, setSettings] = React.useState(() => (typeof props.read === "function" ? props.read() : props.settings));
+			// 提交放在事件处理器里，不放进 setState 的更新函数：更新函数里做副作用会被
+			// React 重放或丢弃，正是"改了控件没反应"的常见来源。
+			const change = (patch) => {
+				const next = { ...settings, ...patch };
+				setSettings(next);
+				props.commit(next);
+			};
+
+			// 面板一次编辑一套预设：默认跟随当前 DSH 主题，也可手动切去看另一套。
+			const [editingMode, setEditingMode] = React.useState(document.body !== null && document.body.hasAttribute("data-ds-dark-theme") ? "dark" : "light");
+			const m = settings[editingMode];
+			const patchMode = (patch) => {
+				// 改哪一套就让哪一套生效：setTheme 在偏好未变时会直接返回，所以拖滑块也不会重复切换。
+				if (typeof props.switchMode === "function") props.switchMode(editingMode);
+				change({ [editingMode]: { ...m, ...patch } });
+			};
+			const [packStatus, setPackStatus] = React.useState("");
+			const [library, setLibrary] = React.useState([]);
+			const [libraryDir, setLibraryDir] = React.useState("");
+			const [libraryError, setLibraryError] = React.useState("");
+
+			const refreshLibrary = async () => {
+				try {
+					const payload = await fetchLibrary();
+					setLibrary(payload.skins);
+					setLibraryDir(payload.dir);
+					setLibraryError("");
+				} catch (error) {
+					setLibrary([]);
+					setLibraryError(error !== null && error !== undefined && error.message !== undefined ? error.message : String(error));
+				}
+			};
+			React.useEffect(() => {
+				void refreshLibrary();
+			}, []);
+
+			const currentHash = fingerprint(settings);
+			const activeSkin = settings.activeSkin !== null && typeof settings.activeSkin === "object" ? settings.activeSkin : { kind: "custom" };
+			const skinIsNamed = activeSkin.kind === "pack" || activeSkin.kind === "builtin";
+			const skinOnPack = skinIsNamed && activeSkin.hash === currentHash;
+			const skinStatus = activeSkin.kind === "official" ? "官方皮肤" : skinOnPack ? activeSkin.name : "自定义";
+			const skinValue = activeSkin.kind === "official" ? "official" : skinOnPack ? (activeSkin.kind === "builtin" ? "builtin" : `pack:${activeSkin.file}`) : "custom";
+
+			const applyLibrarySkin = async (value) => {
+				if (value === "custom") return;
+				if (value === "builtin") {
+					// 内置皮肤 = 出厂那套：深色→暗色场景、浅色→亮色场景、侧栏→立绘。
+					const next = buildSettings(null);
+					next.activeSkin = { kind: "builtin", name: "内置皮肤", hash: fingerprint(next) };
+					setSettings(next);
+					props.commit(next);
+					setPackStatus("已切换到内置皮肤（场景 + 立绘，深/浅各一套）。");
+					return;
+				}
+				if (value === "official") {
+					const next = { ...settings, activeSkin: { kind: "official" } };
+					setSettings(next);
+					props.commit(next);
+					setPackStatus("已切换到官方皮肤（宿主原样）。");
+					return;
+				}
+				const file = value.startsWith("pack:") ? value.slice(5) : value;
+				setPackStatus("正在应用…");
+				try {
+					const pack = await readLibrarySkin(file);
+					const result = await applySkinPack(pack, { file });
+					setSettings(result.settings);
+					props.commit(result.settings);
+					setPackStatus(`已应用「${result.settings.packName === "" ? file : result.settings.packName}」：恢复 ${result.restored} 张本地图`);
+				} catch (error) {
+					setPackStatus(`应用失败：${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`);
+				}
+			};
+
+			const runExport = async () => {
+				setPackStatus("正在导出…");
+				try {
+					const message = await exportPack(settings);
+					let extra = "";
+					try {
+						const built = await buildPack(settings);
+						const saved = await saveToLibrary(built.pack);
+						extra = `；已存入皮肤库（${saved.file}）`;
+						await refreshLibrary();
+					} catch (error) {
+						extra = `；存入皮肤库失败：${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`;
+					}
+					setPackStatus(message + extra);
+				} catch (error) {
+					setPackStatus(`导出失败：${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`);
+				}
+			};
+
+			const runImport = async () => {
+				setPackStatus("正在导入…");
+				try {
+					const result = await importPack();
+					if (result === null) {
+						setPackStatus("已取消");
+						return;
+					}
+					setSettings(result.settings);
+					props.commit(result.settings);
+					setPackStatus(result.message);
+				} catch (error) {
+					setPackStatus(`导入失败：${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`);
+				}
+			};
+
+			// 选「本地文件…」时立刻弹系统选择器；用户取消就保持原选择不动。
+			const chooseAreaImage = async (area, value) => {
+				if (value !== "file") {
+					patchMode(area === "canvas" ? { canvasImage: value } : { sidebarImage: value });
+					return;
+				}
+				const name = await adoptLocalFile(`${area}:${editingMode}`);
+				if (name === null) return;
+				patchMode(area === "canvas" ? { canvasImage: "file", canvasFileName: name } : { sidebarImage: "file", sidebarFileName: name });
+			};
+
+			return React.createElement(
+				"div",
+				{ style: LIST_STYLE },
+				React.createElement("div", { style: GROUP_TITLE_STYLE }, "应用已有皮肤"),
+				Row(
+					"正在使用",
+					libraryError === "" ? `皮肤库：${library.filter((row) => row.ok).length} 个可用${library.length > library.filter((row) => row.ok).length ? `，${library.length - library.filter((row) => row.ok).length} 个无法解析` : ""}` : libraryError,
+					Select(
+						skinValue,
+						[
+							{ value: "official", label: "官方皮肤（宿主原样）" },
+							{ value: "builtin", label: "内置皮肤（深海鲸鱼场景 + 立绘）" },
+							...library.map((row) => ({ value: `pack:${row.file}`, label: row.ok ? `皮肤：${row.name}` : `⚠ ${row.file}（${row.error}）`, disabled: !row.ok })),
+							...(skinValue === "custom" ? [{ value: "custom", label: "自定义（当前设置）" }] : []),
+						],
+						(value) => void applyLibrarySkin(value),
+					),
+				),
+				Row(
+					"皮肤库目录",
+					libraryDir === "" ? "插件自己的目录，把导出的 .json 放进这里就会被读到。" : libraryDir,
+					React.createElement("button", { type: "button", style: { ...SELECT_STYLE, cursor: "pointer" }, onClick: () => void refreshLibrary() }, "重新读取"),
+				),
+				packStatus === "" ? null : Row("状态", packStatus, null),
+				Row(
+					"正在编辑",
+					"深色与浅色各存一套预设。切换这里会把界面主题真的切过去（等同「外观」那行），改完立刻能看到效果。",
+					Select(editingMode, [{ value: "dark", label: "深色模式预设" }, { value: "light", label: "浅色模式预设" }], (value) => {
+						setEditingMode(value);
+						if (typeof props.switchMode === "function") props.switchMode(value);
+					}),
+				),
+				React.createElement("div", { style: GROUP_TITLE_STYLE }, "主内容"),
+				Row(
+					"主内容 · 有背景图",
+					"勾选后才显示选取与不透明度；取消勾选即把该模式的素材设为「无」。",
+					Toggle(m.canvasImage !== "none", "主内容有背景图", (checked) => patchMode({ canvasImage: checked ? "file" : "none" })),
+				),
+				m.canvasImage === "none" ? null : React.createElement(React.Fragment, null,
+				Row(
+					"主内容 · 背景图",
+					m.canvasFileName !== "" ? `已选择本地文件：${m.canvasFileName}` : m.canvasImage === "file" ? "尚未选择图片。" : `当前是内置素材（${m.canvasImage}），选一张本地图片即可替换。`,
+					Select(m.canvasImage, materialChoices(CANVAS_CHOICES, m.canvasImage), (value) => chooseAreaImage("canvas", value)),
+				),
+				Row(
+					"主内容 · 不透明度",
+					"100% 时图最清楚，0% 被画布底色完全盖住。",
+					React.createElement(
+						"div",
+						{ style: CONTROL_STYLE },
+						Slider(m.canvasOpacity, (value) => patchMode({ canvasOpacity: value })),
+						React.createElement(NumberBox, { value: m.canvasOpacity, min: 0, max: 100, unit: "%", label: "主内容背景图不透明度", onCommit: (value) => patchMode({ canvasOpacity: value }) }),
+					),
+				),
+				),
+				React.createElement("div", { style: GROUP_TITLE_STYLE }, "侧栏"),
+				Row(
+					"侧栏 · 有背景图",
+					"勾选后才显示选取与位置；取消勾选即把该模式的素材设为「无」。",
+					Toggle(m.sidebarImage !== "none", "侧栏有背景图", (checked) => patchMode({ sidebarImage: checked ? "file" : "none" })),
+				),
+				m.sidebarImage === "none" ? null : React.createElement(React.Fragment, null,
+				Row(
+					"侧栏 · 背景图",
+					m.sidebarFileName !== "" ? `已选择本地文件：${m.sidebarFileName}` : m.sidebarImage === "file" ? "尚未选择图片。" : `当前是内置素材（${m.sidebarImage}），选一张本地图片即可替换。`,
+					Select(m.sidebarImage, materialChoices(SIDEBAR_CHOICES, m.sidebarImage), (value) => chooseAreaImage("sidebar", value)),
+				),
+				Row(
+					"侧栏 · 不透明度",
+					"100% 时图最完整，0% 被同色蒙版盖住。",
+					React.createElement(
+						"div",
+						{ style: CONTROL_STYLE },
+						Slider(m.sidebarOpacity, (value) => patchMode({ sidebarOpacity: value })),
+						React.createElement(NumberBox, { value: m.sidebarOpacity, min: 0, max: 100, unit: "%", label: "侧栏背景图不透明度", onCommit: (value) => patchMode({ sidebarOpacity: value }) }),
+					),
+				),
+				Row(
+					"侧栏图 · 水平位置",
+					"正数向右、负数向左（px）。",
+					React.createElement(
+						"div",
+						{ style: CONTROL_STYLE },
+						RangeSlider(m.sidebarOffsetX, -240, 240, (value) => patchMode({ sidebarOffsetX: value })),
+						React.createElement(NumberBox, { value: m.sidebarOffsetX, min: -240, max: 240, unit: "px", label: "侧栏图水平位置", onCommit: (value) => patchMode({ sidebarOffsetX: value }) }),
+					),
+				),
+				Row(
+					"侧栏图 · 垂直位置",
+					"0 = 底边贴住下方那条浮雕栏的上沿；正数把图向上抬。",
+					React.createElement(
+						"div",
+						{ style: CONTROL_STYLE },
+						RangeSlider(m.sidebarOffsetY, -260, 320, (value) => patchMode({ sidebarOffsetY: value })),
+						React.createElement(NumberBox, { value: m.sidebarOffsetY, min: -260, max: 320, unit: "px", label: "侧栏图垂直位置", onCommit: (value) => patchMode({ sidebarOffsetY: value }) }),
+					),
+				),
+				),
+				React.createElement("div", { style: GROUP_TITLE_STYLE }, "外观"),
+				Row(
+					"UI 风格",
+					"方形会把按钮、输入框、卡片、弹窗的圆角全部归零。",
+					Select(settings.square ? "square" : "native", [{ value: "square", label: "方形（皮肤风格）" }, { value: "native", label: "原生圆角" }], (value) => change({ square: value === "square" })),
+				),
+				Row("界面字体", "整站的基础字体。", Select(settings.uiFont, FONT_CHOICES, (value) => change({ uiFont: value }))),
+				Row("侧栏字体", "只影响侧栏内的文字（工作区名、会话标题…）。", Select(settings.sidebarFont, SIDEBAR_FONT_CHOICES, (value) => change({ sidebarFont: value }))),
+				Row("品牌字标", "侧栏左上角的字标样式。", Select(settings.brandMark, [{ value: "dsh", label: "DSH 方框字标" }, { value: "host", label: "宿主原样" }], (value) => change({ brandMark: value }))),
+				Row("LINK ACTIVE 标签", "字标右侧那条方形信号点标签。", Toggle(settings.linkChip, "LINK ACTIVE 标签", (value) => change({ linkChip: value }))),
+				React.createElement("div", { style: GROUP_TITLE_STYLE }, "皮肤包"),
+				Row("名称", "导出时的文件名，也是导入后显示的名字。", UrlInput(settings.packName, "我的皮肤", (value) => change({ packName: value }))),
+				Row(
+					"导出",
+					"深色 + 浅色两套预设打成一个自包含 JSON；本地图片会内嵌进包里。",
+					React.createElement("button", { type: "button", style: { ...SELECT_STYLE, cursor: "pointer" }, onClick: () => void runExport() }, "导出皮肤包"),
+				),
+				Row(
+					"导入",
+					"读取皮肤包并立即套用；其中的本地图片写回本机存储。",
+					React.createElement("button", { type: "button", style: { ...SELECT_STYLE, cursor: "pointer" }, onClick: () => void runImport() }, "导入皮肤包"),
+				),
+				packStatus === "" ? null : Row("状态", packStatus, null),
+				Row(
+					"",
+					null,
+					React.createElement(
+						"button",
+						{
+							type: "button",
+							style: { ...SELECT_STYLE, cursor: "pointer", minWidth: "168px" },
+							onClick: () => change(defaultSettings()),
+						},
+						"恢复默认",
+					),
+				),
+			);
+		}
+
+		// ===================== 装载 =====================
+		function apply(ctx) {
+			const claimant = Symbol("dsh-mini-skin-activation");
+			if (!activate(claimant)) document.addEventListener("DOMContentLoaded", () => activate(claimant), { once: true });
+
+			let settings = readSettings();
+			applySettings(claimant, settings);
+
+			// 本地图片本体存在 IndexedDB 里；取出来生成 blob URL 之后重放一次设置。
+			void (async () => {
+				for (const slot of ART_SLOTS) {
+					try {
+						// 旧版只有 canvas / sidebar 两个槽：迁移时两套预设都指向同一张图。
+						const blob = (await readImage(slot)) ?? (slot.endsWith(":dark") ? await readImage(slot.split(":")[0]) : null);
+						if (blob !== null) fileUrls[slot] = URL.createObjectURL(blob);
+					} catch {
+						/* 读不到就当作没有本地图 */
+					}
+				}
+				if (document.body !== null) applySettings(claimant, settings);
+			})();
+
+			// 切浅/深色时换成对应预设。色值取自事件快照（active.colorScheme），绝不读 DOM；
+			// 订阅走 ctx.inject，避免 apply 早于 theme 服务注册时静默漏订阅。
+			const resync = (snapshot) => {
+				const active = snapshot !== null && typeof snapshot === "object" ? snapshot.active : undefined;
+				const scheme = active !== null && typeof active === "object" ? active.colorScheme : undefined;
+				if (scheme === "dark" || scheme === "light") knownScheme = scheme;
+				applySettings(claimant, settings);
+			};
+			const subscribeTheme = (themeCtx) => {
+				const theme = typeof themeCtx.get === "function" ? themeCtx.get("theme") : undefined;
+				if (theme === undefined || typeof themeCtx.on !== "function") return;
+				themeCtx.on("theme/change", resync);
+				themeCtx.effect(() => () => themeCtx.off("theme/change", resync), "dsh-mini-skin: theme resync");
+			};
+			if (typeof ctx.inject === "function") ctx.inject(["theme"], subscribeTheme);
+			else subscribeTheme(ctx);
+
+			// 设置分区：用 ctx.inject 等 slots 服务就绪再注册（本插件 dsh.client.inject 为空，
+			// apply 可能早于 slots 注册，查一次 ctx.get 会拿到 undefined）。
+			const registerSection = (slotsCtx) => {
+				const slots = typeof slotsCtx.get === "function" ? slotsCtx.get("slots") : undefined;
+				if (slots === undefined || typeof slots.inject !== "function") return;
+				slotsCtx.effect(
+					() =>
+						slots.inject("settings.section", () =>
+							slots.register(
+								{
+									name: "settings.section",
+									id: SECTION_ID,
+									order: 116,
+									label: () => SECTION_TITLE,
+									inject: () => ({
+											// 面板每次挂载都通过它取当前值：不能传对象快照，否则重新挂载后面板会显示旧值
+											// （曾经因此出现"下拉显示旧选项、再选同一项因值未变而不触发"的问题）。
+											read: () => settings,
+										settings,
+										commit: (next) => {
+											settings = next;
+											persistSettings(next);
+											applySettings(claimant, next);
+										},
+										switchMode: (mode) => {
+											// 宿主的唯一偏好写入口：真的切主题（并持久化），这样配另一套预设时能立刻看到效果。
+											// 先记账再切换：setTheme 之后宿主要到下一帧才把主题属性写进 DOM。
+											if (mode === "dark" || mode === "light") knownScheme = mode;
+											const theme = typeof ctx.get === "function" ? ctx.get("theme") : undefined;
+											if (theme !== undefined && typeof theme.setTheme === "function") theme.setTheme(mode);
+										},
+									}),
+								},
+								CustomSkinPanel,
+							),
+						),
+					"dsh-mini-skin: settings section",
+				);
+			};
+			if (typeof ctx.inject === "function") ctx.inject(["slots"], registerSection);
+			else registerSection(ctx);
+
+			ctx.effect(
+				() => () => {
+					clearSettings(claimant);
+					deactivate(claimant);
+				},
+				"dsh-mini-skin: stylesheet",
+			);
+		}
+
+		exports.apply = apply;
+		// 模块级 inject：客户端运行器会等 slots 服务就绪再调用 apply（皮肤管理器同款做法）。
+		// apply 里仍保留 ctx.inject 兜底，两条路径都通。
+		exports.inject = ["slots"];
+		return module.exports;
+	},
+});
