@@ -95,3 +95,10 @@ skins/*.json                     可直接放进 <DSH_HOME>/mini-skins/ 的皮�
 | 空闲帧序 | `[0,0,0,0,1,2,3,2,1]`，时长 `[700,700,700,700,130,90,110,90,130]`（一轮 3.35s） |
 | 工作帧序 | `[0..7]`，固定 83ms/帧（12fps，一轮 0.66s） |
 | 对齐 | 以 **standby 帧 0 的 alpha 质心**为全局锚点，逐帧补偿（实测 working 各帧需 +4.5…+6.4px）；值是**从图集算出来的**，图集换了要重算 |
+
+## v3：四套预设与工作状态检测
+
+- 预设键：dark:idle / dark:work / light:idle / light:work；图片槽位同步扩为「区域:模式:状态」（8 槽），旧的 canvas:dark 与更早的 canvas 仍会兜底读到。
+- 检测：每 0.4 秒读 [data-state=running] 与 [data-composer-input][data-phase]（submitting/adjudicating）。刻意不用 MutationObserver（原皮肤用了整个 body 的观察器）。
+- 动图闭环：循环接缝必须落在小变化上。曾用 [0,0,1,2,3,2,1,0]（首末同帧）导致接缝处帧 0 连播 720ms，肉眼可见地静止一下；改成回文式 [0,1,2,3,2,1] 后接缝像素差 4.19（与内部帧间同量级）。dev/anim/build-seamless-idle.py 会把接缝差异打印出来。
+- 副作用：皮肤包已选中时受控下拉的同值不触发 onChange，所以换包后需要「官方皮肤 → 再选回」，或等一个「重新应用」按钮。
