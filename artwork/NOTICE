@@ -36,3 +36,5 @@ rendered from deepseek-ai/deepseek-harness at commit
 c36a83ff6bb95e3f82cf79f9be7c724270a8aa61, copyright (c) 2026 DeepSeek,
 under the MIT License reproduced in tests/fixtures/DSH-LICENSE. These test
 fixtures are separate from the character artwork licensed above.
+
+分发说明：场景图按原样内嵌于本插件以随包分发，画面内容未作改动。

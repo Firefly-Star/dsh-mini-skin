@@ -35,3 +35,5 @@ Artwork usage terms (LICENSE-ARTWORK): CC BY-NC-SA 4.0 —— 署名 (attributio
 
 Software code is covered by LICENSE (MIT). Artwork copyright remains with the
 respective authors above, including embedded and transformed copies.
+
+修改说明：立绘经降采样与重编码后随包分发（原图约 1010 KB -> 约 136 KB WebP），画面内容未作改动；按 CC BY-NC-SA 4.0 的署名要求在此注明。

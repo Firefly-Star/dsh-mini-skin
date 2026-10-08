@@ -178,8 +178,22 @@ node _perf-probe/verify-chain4.mjs
 
 ---
 
-## 许可与署名
+## 许可
 
-- **代码**：MIT
-- **美术**：场景图来自 `orca-link`（上善 -> Small-tailqwq），立绘来自 `maid-atelier`（上善 -> ZipZipPipe -> Small-tailqwq），均为 **CC BY-NC-SA 4.0（非商业）**。完整署名链见 `artwork/NOTICE` 与 `artwork/NOTICE-maid-atelier`，美术许可见 `artwork/LICENSE-ARTWORK`。
+本仓库的**代码与美术分开许可**，两套条款各自独立：
+
+| 范围 | 许可 | 文件 |
+|---|---|---|
+| **代码**：`lib/index.js`、`lib/client.js` 里的代码、`package.json`、`cordis.patch.yml`、`locale/*`、`assets/*`、构建工具 | **MIT** | [`LICENSE`](LICENSE) |
+| **美术**：`artwork/` 下的图片资源，以及 `lib/client.js` 内嵌的图片数据 | **CC BY-NC-SA 4.0** | [`artwork/LICENSE-ARTWORK`](artwork/LICENSE-ARTWORK) |
+
+署名链（必须随资源一起保留）：
+
+- 场景图：`orca-link` —— 上善 -> Small-tailqwq，见 [`artwork/NOTICE`](artwork/NOTICE)
+- 立绘：`maid-atelier` —— 上善 -> ZipZipPipe -> Small-tailqwq，见 [`artwork/NOTICE-maid-atelier`](artwork/NOTICE-maid-atelier)
+
+注意事项：
+
+- 美术是**非商业**许可：不得用于以商业优势或金钱报酬为主要目的的用途。
+- 立绘经**降采样与重编码**后随包分发，属改编作品，按相同方式共享条款继续以 CC BY-NC-SA 4.0 分发。
 - 复制本插件的图片资源时，**署名与许可必须一起带走**。
