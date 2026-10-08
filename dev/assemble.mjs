@@ -1,19 +1,32 @@
-// Splice the new factory body into mini-skin's client bundle, keeping the header
-// and the embedded IMAGES block (with its 230 KB of base64) untouched.
-import { readFileSync, writeFileSync } from 'node:fs';
+﻿#!/usr/bin/env node
+/**
+ * Rebuild lib/client.js from the factory source.
+ *
+ *   lib/client.js  =  <image prefix>  +  new-factory.txt
+ *
+ * The image prefix (5 embedded images, ~412 KB) is PRESERVED from the current
+ * lib/client.js and is regenerated separately by embed-art.mjs. This script is
+ * path-relative, so it works from a fresh clone:
+ *
+ *   node dev/assemble.mjs
+ */
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const TARGET = 'C:/Users/Summer/Documents/deepseek-harness/default-workspace/mini-skin/lib/client.js';
-const FACTORY = 'C:/Users/Summer/Documents/deepseek-harness/default-workspace/_perf-probe/new-factory.txt';
+const here = dirname(fileURLToPath(import.meta.url));
+const factoryPath = join(here, "new-factory.txt");
+const clientPath = join(here, "..", "lib", "client.js");
 
-const before = readFileSync(TARGET, 'utf8');
-const at = before.indexOf('window.__ModuleLoader__.load({');
-if (at < 0) throw new Error('module registration not found in target');
-const prefix = before.slice(0, at);
-const factory = readFileSync(FACTORY, 'utf8').replace(/\s*$/, '\n');
+const current = readFileSync(clientPath, "utf8");
+const mark = "window.__ModuleLoader__.load(";
+const at = current.indexOf(mark);
+if (at < 0) throw new Error("lib/client.js 里找不到 " + mark + "，无法定位图片前缀");
+const prefix = current.slice(0, at);
+const factory = readFileSync(factoryPath, "utf8").trimEnd() + "\n";
+writeFileSync(clientPath, prefix + factory, "utf8");
 
-const after = prefix + factory;
-writeFileSync(TARGET, after, 'utf8');
-const count = (t, re) => [...t.matchAll(re)].length;
-console.log(`prefix kept: ${(prefix.length / 1024).toFixed(1)} KB (${count(prefix, /data:image\/webp;base64,/g)} embedded images)`);
-console.log(`factory:     ${(factory.length / 1024).toFixed(1)} KB`);
-console.log(`written:     ${(after.length / 1024).toFixed(1)} KB, embedded images: ${count(after, /data:image\/webp;base64,/g)}`);
+const count = (text) => (text.match(/data:image\//g) || []).length;
+console.log("prefix kept: " + (prefix.length / 1024).toFixed(1) + " KB (" + count(prefix) + " embedded images)");
+console.log("factory:     " + (factory.length / 1024).toFixed(1) + " KB");
+console.log("written:     " + ((prefix.length + factory.length) / 1024).toFixed(1) + " KB");
