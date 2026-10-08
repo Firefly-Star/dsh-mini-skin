@@ -60,3 +60,7 @@ node dev/verify-chain4.mjs
 # 4) 收尾
 node dev/close-chrome-9335.mjs
 ```
+
+## 唯一真源
+
+`dev/new-factory.txt` 是工厂源码的**唯一真源**。任何镜像副本（例如开发机上 `_perf-probe/` 里的那份）都已退休为指路文件，不要在那里编辑。
