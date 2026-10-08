@@ -29,18 +29,18 @@ window.__ModuleLoader__.load({
 		// ===================== 内置可选素材 =====================
 		// 主画布 / 侧栏各自一张，用户可在设置里换。custom 用下面那个地址输入框。
 		const CANVAS_CHOICES = [
-			{ value: "dark-hero", label: "暗色场景 · 空态", image: () => IMAGES.orcaDarkHero },
-			{ value: "dark-active", label: "暗色场景 · 工作态", image: () => IMAGES.orcaDarkActive },
-			{ value: "light-hero", label: "亮色场景 · 空态", image: () => IMAGES.orcaLightHero },
-			{ value: "light-active", label: "亮色场景 · 工作态", image: () => IMAGES.orcaLightActive },
-			{ value: "none", label: "不要背景图", image: () => null },
-			{ value: "file", label: "本地文件…（系统选择器）", image: () => null },
+			{ value: "dark-hero", label: "暗色场景 · 空态" },
+			{ value: "dark-active", label: "暗色场景 · 工作态" },
+			{ value: "light-hero", label: "亮色场景 · 空态" },
+			{ value: "light-active", label: "亮色场景 · 工作态" },
+			{ value: "none", label: "不要背景图" },
+			{ value: "file", label: "本地文件…（系统选择器）" },
 		];
 		const SIDEBAR_CHOICES = [
-			{ value: "maid-left", label: "maid-atelier 立绘", image: () => IMAGES.maidLeft },
-			{ value: "dark-hero", label: "orca-link 暗色场景", image: () => IMAGES.orcaDarkHero },
-			{ value: "none", label: "不要背景图", image: () => null },
-			{ value: "file", label: "本地文件…（系统选择器）", image: () => null },
+			{ value: "maid-left", label: "maid-atelier 立绘" },
+			{ value: "dark-hero", label: "orca-link 暗色场景" },
+			{ value: "none", label: "不要背景图" },
+			{ value: "file", label: "本地文件…（系统选择器）" },
 		];
 
 		/**
@@ -115,24 +115,6 @@ window.__ModuleLoader__.load({
 				dark: { ...MODE_DEFAULTS.dark, ...(legacy ? flat : pickArt(stored.dark)) },
 				light: { ...MODE_DEFAULTS.light, ...(legacy ? flat : pickArt(stored.light)) },
 			};
-		};
-
-		const DEFAULTS = {
-			canvasImage: "dark-hero",
-			canvasImageUrl: "",
-			canvasFileName: "",
-			canvasOpacity: 52,
-			sidebarImage: "maid-left",
-			sidebarImageUrl: "",
-			sidebarFileName: "",
-			sidebarOpacity: 100,
-			sidebarOffsetX: 0,
-			sidebarOffsetY: 0,
-			square: true,
-			brandMark: "dsh",
-			linkChip: true,
-			uiFont: "system",
-			sidebarFont: "inherit",
 		};
 
 		/** 画布底色分量；alpha 由"背景图不透明度"给出。 */
