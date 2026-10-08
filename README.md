@@ -9,16 +9,18 @@
 ## 安装
 
 ```powershell
+# GitHub（推荐：一行装，不需要 npm 账号）
+dsh plugin --profile web add 'github:Firefly-Star/dsh-mini-skin'
+
 # 本地目录（link：改文件即时生效，开发用）
 dsh plugin --profile web add '<绝对路径>\mini-skin'
 
 # tarball（复制安装，工作区目录不再是运行依赖）
 npm pack --pack-destination .
-dsh plugin --profile web add '<绝对路径>\dsh-mini-skin-0.1.0.tgz'
-
-# git / npm（发布后）
-dsh plugin --profile web add 'github:<用户名>/<仓库>#path:/'
+dsh plugin --profile web add '<绝对路径>\dsh-mini-skin-0.2.0.tgz'
 ```
+
+本插件**未发布到 npm**（npm 上没有 `dsh-mini-skin`）：请用上面的 GitHub 或 tarball 方式安装。从 GitHub/tarball 安装是**复制**安装——本地源码的改动不会再影响已装版本。
 
 **重启语义**：客户端半边（`lib/client.js`）热更新即可；**节点半边（`lib/index.js`）改动必须重启 DSH**。皮肤库路由只在重启后存在。
 

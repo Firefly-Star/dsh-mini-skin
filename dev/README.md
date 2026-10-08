@@ -64,3 +64,12 @@ node dev/close-chrome-9335.mjs
 ## 唯一真源
 
 `dev/new-factory.txt` 是工厂源码的**唯一真源**。任何镜像副本（例如开发机上 `_perf-probe/` 里的那份）都已退休为指路文件，不要在那里编辑。
+
+## 发布到 npm 的注意事项（实测踩过）
+
+本插件**没有发布到 npm**。若哪天要发布：
+
+1. **本机 npm 源是 `https://registry.npmmirror.com`（阿里只读镜像）** —— 镜像站不接受注册、也不能发布，发布必须显式指定官方源：
+   `npm publish --registry=https://registry.npmjs.org/ --access public`
+2. **npm 已关闭“传统方式创建账号”**：`npm adduser --auth-type=legacy` 会返回 `403 / Account creation via legacy auth is unavailable`；只能走 <https://www.npmjs.com/signup>（该站在 Cloudflare 人机验证之后；无痕 + 禁用扩展、或换网络/换设备）。
+3. 若 CLI 的浏览器授权页打不开：在网站建一个 Access Token 写进本机 `~/.npmrc`（不要提交），再执行上面的 publish 命令；注意 npm 正在收紧“绕过 2FA”的令牌在发布上的使用，必要时改用 `--otp=<六位码>`。
