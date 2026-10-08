@@ -80,7 +80,7 @@ window.__ModuleLoader__.load({
 		/** 当前设置的指纹：与"应用时记下的指纹"不一致，就说明用户已经改过 = 自定义。 */
 		const fingerprint = (settings) => {
 			const parts = [];
-			for (const mode of ["dark", "light"]) for (const key of ART_KEYS) parts.push(`${mode}.${key}=${settings[mode][key]}`);
+			for (const preset of PRESET_KEYS) for (const key of ART_KEYS) parts.push(`${preset}.${key}=${settings[preset][key]}`);
 			for (const key of ["square", "brandMark", "linkChip", "uiFont", "sidebarFont"]) parts.push(`${key}=${settings[key]}`);
 			const text = parts.join("|");
 			let hash = 5381;
@@ -90,7 +90,7 @@ window.__ModuleLoader__.load({
 
 		/** 官方皮肤 = 宿主原样：本插件的样式与属性全部撤下。 */
 		const isOfficial = (settings) => settings.activeSkin !== null && typeof settings.activeSkin === "object" && settings.activeSkin.kind === "official";
-		const ART_SLOTS = ["canvas:dark", "canvas:light", "sidebar:dark", "sidebar:light"];
+		const ART_SLOTS = ["canvas:dark:idle", "canvas:dark:work", "canvas:light:idle", "canvas:light:work", "sidebar:dark:idle", "sidebar:dark:work", "sidebar:light:idle", "sidebar:light:work"];
 
 		const pickArt = (source) => {
 			const out = {};
@@ -99,7 +99,21 @@ window.__ModuleLoader__.load({
 			return out;
 		};
 
-		const defaultSettings = () => ({ version: 2, dark: { ...MODE_DEFAULTS.dark }, light: { ...MODE_DEFAULTS.light }, ...SHARED_DEFAULTS });
+		// 四套预设：主题(深/浅) × 状态(空闲/工作)，键形如 "dark:work"。
+		const PRESET_KEYS = ["dark:idle", "dark:work", "light:idle", "light:work"];
+		const presetKey = (mode, working) => mode + (working ? ":work" : ":idle");
+		const modeOf = (key) => (key.startsWith("dark") ? "dark" : "light");
+		const isPresetKey = (value) => typeof value === "string" && PRESET_KEYS.includes(value);
+
+		const defaultSettings = () => {
+			const out = { version: 3, ...SHARED_DEFAULTS };
+			out["dark:idle"] = { ...MODE_DEFAULTS.dark };
+			out["light:idle"] = { ...MODE_DEFAULTS.light };
+			// 工作态用"工作场景"：内置素材里本来就有 dark-active / light-active。
+			out["dark:work"] = { ...MODE_DEFAULTS.dark, canvasImage: "dark-active" };
+			out["light:work"] = { ...MODE_DEFAULTS.light, canvasImage: "light-active" };
+			return out;
+		};
 
 		/** 读取并把旧版（扁平、无模式概念）的设置迁移成"深/浅各一套"。 */
 		const buildSettings = (stored) => {
@@ -109,12 +123,14 @@ window.__ModuleLoader__.load({
 			for (const key of Object.keys(SHARED_DEFAULTS)) if (stored[key] !== undefined) shared[key] = stored[key];
 			const flat = pickArt(stored);
 			const legacy = Object.keys(flat).length > 0;
-			return {
-				...base,
-				...shared,
-				dark: { ...MODE_DEFAULTS.dark, ...(legacy ? flat : pickArt(stored.dark)) },
-				light: { ...MODE_DEFAULTS.light, ...(legacy ? flat : pickArt(stored.light)) },
-			};
+			// v3：每个键各自一套；v2：只有 dark/light（映射到该主题的 idle 与 work）；更早：顶层扁平值。
+			const v2 = { "dark:idle": stored.dark, "dark:work": stored.dark, "light:idle": stored.light, "light:work": stored.light };
+			const out = { ...base, ...shared };
+			for (const key of PRESET_KEYS) {
+				const source = legacy ? flat : stored[key] !== undefined ? pickArt(stored[key]) : pickArt(v2[key]);
+				out[key] = { ...base[key], ...source };
+			}
+			return out;
 		};
 
 		/** 画布底色分量；alpha 由"背景图不透明度"给出。 */
@@ -341,9 +357,9 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 				stored = {};
 			}
 			const merged = buildSettings(stored);
-			for (const mode of ["dark", "light"]) {
-				merged[mode].canvasOpacity = clamp(Number(merged[mode].canvasOpacity) || 0, 0, 100);
-				merged[mode].sidebarOpacity = clamp(Number(merged[mode].sidebarOpacity) || 0, 0, 100);
+			for (const key of PRESET_KEYS) {
+				merged[key].canvasOpacity = clamp(Number(merged[key].canvasOpacity) || 0, 0, 100);
+				merged[key].sidebarOpacity = clamp(Number(merged[key].sidebarOpacity) || 0, 0, 100);
 			}
 			return merged;
 		};
@@ -369,7 +385,7 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 			activate(claimant);
 			shared.settingsClaims.add(claimant);
 			const mode = currentScheme();
-			const active = settings[mode];
+			const active = settings[presetKey(mode, isWorking())] ?? settings[presetKey(mode, false)];
 
 			// 图片数据一律留在样式表里的自定义属性上，行内只写"选了哪一张"和极小的值：
 			// 几百 KB 的 data URI 写进行内样式并不可靠（上一版图不显示的根因）。
@@ -381,7 +397,7 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 				else body.style.setProperty(CANVAS_CUSTOM_VAR, `url("${url}")`);
 			}
 			if (canvasChoice === "file") {
-				const url = fileUrls[`canvas:${mode}`];
+				const url = fileUrls[`canvas:${presetKey(mode, isWorking())}`];
 				if (url === null) body.style.removeProperty(CANVAS_FILE_VAR);
 				else body.style.setProperty(CANVAS_FILE_VAR, `url("${url}")`);
 			} else {
@@ -421,7 +437,7 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 					else body.style.setProperty(SIDEBAR_CUSTOM_VAR, `url("${url}")`);
 				}
 				if (sidebarChoice === "file") {
-					const url = fileUrls[`sidebar:${mode}`];
+					const url = fileUrls[`sidebar:${presetKey(mode, isWorking())}`];
 					if (url === null) body.style.removeProperty(SIDEBAR_FILE_VAR);
 					else body.style.setProperty(SIDEBAR_FILE_VAR, `url("${url}")`);
 				} else {
@@ -548,7 +564,7 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 
 		// ===================== 皮肤包：导出 / 导入（只涉及本地图片，因此一定自包含）=====================
 		const PACK_FORMAT = "dsh-mini-skin-pack";
-		const PACK_VERSION = 2;
+		const PACK_VERSION = 3;
 
 		const blobToDataUrl = (blob) =>
 			new Promise((resolve, reject) => {
@@ -628,7 +644,7 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 					name: settings.packName === "" ? "dsh-mini-skin" : settings.packName,
 					savedAt: new Date().toISOString(),
 					shared,
-					modes: { dark: { ...settings.dark }, light: { ...settings.light } },
+					modes: Object.fromEntries(PRESET_KEYS.map((key) => [key, { ...settings[key] }])),
 					images,
 				},
 				count: Object.keys(images).length,
@@ -666,11 +682,30 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 			const modes = parsed.modes !== null && typeof parsed.modes === "object" ? parsed.modes : {};
 			const next = buildSettings({
 				...(parsed.shared !== null && typeof parsed.shared === "object" ? parsed.shared : {}),
-				dark: modes.dark,
-				light: modes.light,
+				...modes,
 				packName: typeof parsed.name === "string" ? parsed.name : "",
 			});
 			return { settings: next, message: `已导入「${next.packName === "" ? "未命名" : next.packName}」：恢复 ${restored} 张本地图` };
+		};
+
+		// ===================== 工作/空闲 检测 =====================
+		// 宿主只在 DOM 上暴露状态（没有服务、没有事件）：运行中的行是 [data-state='running']，
+		// 输入框提交中看 [data-composer-input][data-phase]。
+		// 原皮肤为此挂了整个 body 的 MutationObserver；我们改用一个 0.4 秒定时器，每轮只做一两次
+		// querySelector —— 代价是切换最多延迟 0.4 秒，收益是保住"0 观察器"（流式输出时没有每-batch 开销）。
+		const WORK_POLL_MS = 400;
+		let detectedWorking = false;
+		let workOverride = null; // 面板在编辑某套预设时临时强制，关掉面板即恢复自动
+		const isWorking = () => (workOverride === null ? detectedWorking : workOverride);
+		const readWorking = () => {
+			try {
+				if (document.querySelector("[data-state='running']") !== null) return true;
+				const input = document.querySelector("[data-composer-input][data-phase]");
+				const phase = input === null ? "" : input.getAttribute("data-phase");
+				return phase === "submitting" || phase === "adjudicating";
+			} catch {
+				return false;
+			}
 		};
 
 		// ===================== 皮肤库（插件自带目录，经节点半边读取）=====================
@@ -715,11 +750,12 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 					/* 单张失败不影响其余 */
 				}
 			}
+			// v3 包是 dark:idle/dark:work/… 四键；v2 包只有 dark/light —— buildSettings 两种都认，
+			// 所以这里必须原样展开，不能只挑 modes.dark / modes.light（否则 v3 包会整套回落成默认）。
 			const modes = pack.modes !== null && typeof pack.modes === "object" ? pack.modes : {};
 			const next = buildSettings({
 				...(pack.shared !== null && typeof pack.shared === "object" ? pack.shared : {}),
-				dark: modes.dark,
-				light: modes.light,
+				...modes,
 				packName: typeof pack.name === "string" ? pack.name : "",
 			});
 			next.activeSkin = {
@@ -869,11 +905,13 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 			};
 
 			// 面板一次编辑一套预设：默认跟随当前 DSH 主题，也可手动切去看另一套。
-			const [editingMode, setEditingMode] = React.useState(document.body !== null && document.body.hasAttribute("data-ds-dark-theme") ? "dark" : "light");
+			const [editingMode, setEditingMode] = React.useState(() => presetKey(document.body !== null && document.body.hasAttribute("data-ds-dark-theme") ? "dark" : "light", isWorking()));
 			const m = settings[editingMode];
 			const patchMode = (patch) => {
 				// 改哪一套就让哪一套生效：setTheme 在偏好未变时会直接返回，所以拖滑块也不会重复切换。
-				if (typeof props.switchMode === "function") props.switchMode(editingMode);
+				if (typeof props.switchMode === "function") props.switchMode(modeOf(editingMode));
+				workOverride = editingMode.endsWith(":work");
+				if (typeof props.reapply === "function") props.reapply();
 				change({ [editingMode]: { ...m, ...patch } });
 			};
 			const [packStatus, setPackStatus] = React.useState("");
@@ -894,6 +932,10 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 			};
 			React.useEffect(() => {
 				void refreshLibrary();
+				return () => {
+					workOverride = null;
+					if (typeof props.reapply === "function") props.reapply();
+				};
 			}, []);
 
 			const currentHash = fingerprint(settings);
@@ -1006,10 +1048,12 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 				packStatus === "" ? null : Row("状态", packStatus, null),
 				Row(
 					"正在编辑",
-					"深色与浅色各存一套预设。切换这里会把界面主题真的切过去（等同「外观」那行），改完立刻能看到效果。",
-					Select(editingMode, [{ value: "dark", label: "深色模式预设" }, { value: "light", label: "浅色模式预设" }], (value) => {
+					"深色/浅色 × 空闲/工作 = 四套预设。切换这里会同时把界面主题与预览状态切过去；关掉面板后按真实工作状态自动切换。",
+					Select(editingMode, [{ value: "dark:idle", label: "深色 · 空闲" }, { value: "dark:work", label: "深色 · 工作" }, { value: "light:idle", label: "浅色 · 空闲" }, { value: "light:work", label: "浅色 · 工作" }], (value) => {
 						setEditingMode(value);
-						if (typeof props.switchMode === "function") props.switchMode(value);
+						workOverride = value.endsWith(":work");
+						if (typeof props.switchMode === "function") props.switchMode(modeOf(value));
+						if (typeof props.reapply === "function") props.reapply();
 					}),
 				),
 				React.createElement("div", { style: GROUP_TITLE_STYLE }, "主内容"),
@@ -1123,14 +1167,26 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 			if (!activate(claimant)) document.addEventListener("DOMContentLoaded", () => activate(claimant), { once: true });
 
 			let settings = readSettings();
+			detectedWorking = readWorking();
 			applySettings(claimant, settings);
+
+			// 状态轮询：只在状态真的变了时重放设置；面板编辑期间由 workOverride 接管。
+			const poll = () => {
+				const now = readWorking();
+				if (now === detectedWorking) return;
+				detectedWorking = now;
+				if (workOverride === null && document.body !== null) applySettings(claimant, settings);
+			};
+			const workTimer = window.setInterval(poll, WORK_POLL_MS);
+			ctx.effect(() => () => window.clearInterval(workTimer), "dsh-mini-skin: work-state poll");
 
 			// 本地图片本体存在 IndexedDB 里；取出来生成 blob URL 之后重放一次设置。
 			void (async () => {
 				for (const slot of ART_SLOTS) {
 					try {
 						// 旧版只有 canvas / sidebar 两个槽：迁移时两套预设都指向同一张图。
-						const blob = (await readImage(slot)) ?? (slot.endsWith(":dark") ? await readImage(slot.split(":")[0]) : null);
+						const parts = slot.split(":");
+						const blob = (await readImage(slot)) ?? (await readImage(parts.slice(0, 2).join(":"))) ?? (await readImage(parts[0]));
 						if (blob !== null) fileUrls[slot] = URL.createObjectURL(blob);
 					} catch {
 						/* 读不到就当作没有本地图 */
@@ -1180,6 +1236,7 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 											persistSettings(next);
 											applySettings(claimant, next);
 										},
+										reapply: () => { if (document.body !== null) applySettings(claimant, settings); },
 										switchMode: (mode) => {
 											// 宿主的唯一偏好写入口：真的切主题（并持久化），这样配另一套预设时能立刻看到效果。
 											// 先记账再切换：setTheme 之后宿主要到下一帧才把主题属性写进 DOM。
