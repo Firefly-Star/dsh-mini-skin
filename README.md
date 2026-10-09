@@ -154,27 +154,28 @@ DELETE ?file=<名字>   -> 删除
 | `artwork/` | 署名与许可 |
 | `skins/official.json` | 官方皮肤包（1.7 KB，纯内置素材引用）：深色→暗色场景、浅色→亮色场景、侧栏→立绘 |
 | `skins/orca-link.json` | 虎鲸链路示例包（四态：深色 90% / 亮色 65% 主内容不透明度 + 8 张动图槽位） |
-| `skins/深海女仆/` | **深海女仆**：把 maid-atelier 的宫殿 + 双女仆合成成一张画布图。含两个构建脚本、两张合成场景图、Q 版小人、1.8 MB 的自包含包，以及一份"哪些还原得了 / 哪些还原不了"的分析（见该目录 `README.md`） |
+| `skins/深海女仆.json` | **深海女仆**皮肤包：把 maid-atelier 的宫殿 + 双女仆合成成一张画布图 + Q 版小人（1.8 MB 自包含） |
 | `dev/anim/` | 动画管线（图集切片、质心对齐、皮肤包生成、接缝校验）：**产出落在 `$DSH_HOME/mini-skins`，不写回本仓库**，留作复现手段 |
+| `dev/maid/` | 深海女仆皮肤的构建侧：两个脚本 + 两张合成中间图 + 一份"哪些还原得了 / 哪些还原不了"的分析 |
 
 ### 皮肤包（`skins/`）
 
-`skins/` 下是**可以直接放进 `<DSH_HOME>/mini-skins/` 的皮肤包**：
+`skins/` 下是**可以直接放进 `<DSH_HOME>/mini-skins/` 的皮肤包**（一个包一个 json）：
 
 | 包 | 说明 |
 |---|---|
-| `深海女仆/深海女仆.json` | 深海女仆：合成场景 + Q 版小人，8 个槽位内嵌 |
-| `orca-link.json` | 虎鲸链路：四态预设 + 8 张动图槽位内嵌 |
 | `official.json` | 官方皮肤。节点半边在库缺它时会补一份（按**包名**判断，不覆盖你改过的） |
+| `orca-link.json` | 虎鲸链路：四态预设 + 8 张动图槽位内嵌 |
+| `深海女仆.json` | 深海女仆：合成场景 + Q 版小人，8 个槽位内嵌 |
 
 三个包的素材都是**内嵌 base64**（mini-skin 不支持远程 URL），所以文件本身就有 1~2 MB。
 
 **重新生成「深海女仆」那个包**（需要隔壁 `dsh-deep-whale` 仓库的素材，本仓库不分发那些原图）：
 
 ```powershell
-cd skins\深海女仆
-python build-deep-sea-maid-scene.py   # 宫殿 + 双女仆 -> scene-{dark,light}.webp
-python build-deep-sea-maid-pack.py    # -> 深海女仆.json
+cd dev\maid
+python build-scene.py   # 宫殿 + 双女仆 -> scene-{dark,light}.webp（中间产物，留在这里）
+python build-pack.py    # -> ..\..\skins\深海女仆.json
 ```
 
 脚本从 `<仓库根>/../dsh-deep-whale/maid-atelier/assets` 找素材；换机器时用环境变量
@@ -253,7 +254,7 @@ node dev/verify-chain4.mjs
 | 范围 | 许可 | 文件 |
 |---|---|---|
 | **代码**：`lib/index.js`、`lib/client.js` 里的代码、`package.json`、`cordis.patch.yml`、`locale/*`、`assets/*`、`skins/*/*.py`、构建工具 | **MIT** | [`LICENSE`](LICENSE) |
-| **美术**：`artwork/` 下的图片资源、`lib/client.js` 内嵌的图片数据、`skins/深海女仆/` 下的合成图与包内图片 | **CC BY-NC-SA 4.0** | [`artwork/LICENSE-ARTWORK`](artwork/LICENSE-ARTWORK) |
+| **美术**：`artwork/` 下的图片资源、`lib/client.js` 内嵌的图片数据、`dev/maid/scene-*.webp` 合成图、`skins/深海女仆.json` 包内图片 | **CC BY-NC-SA 4.0** | [`artwork/LICENSE-ARTWORK`](artwork/LICENSE-ARTWORK) |
 
 署名链（必须随资源一起保留）：
 
@@ -264,6 +265,6 @@ node dev/verify-chain4.mjs
 
 - 美术是**非商业**许可：不得用于以商业优势或金钱报酬为主要目的的用途。
 - 立绘经**降采样与重编码**后随包分发，属改编作品，按相同方式共享条款继续以 CC BY-NC-SA 4.0 分发。
-- `skins/深海女仆/` 里的合成场景、Q 版小人、以及包内 base64 图片同样是**改编作品**：
+- `dev/maid/scene-*.webp`、`skins/深海女仆.json` 包里的 base64 图片同样是**改编作品**：
   分了它就要把上面的署名链与许可一起带走。该目录只放脚本与产物，**不复制** maid-atelier 的原始素材文件。
 - 复制本插件的图片资源时，**署名与许可必须一起带走**。

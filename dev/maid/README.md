@@ -1,16 +1,16 @@
 # 用 mini-skin 框架还原 maid-atelier（深海女仆）
 
 按 `dsh-deep-whale/maid-atelier` 的源码与其 `preview/` 复刻的**最小可用还原**。
-本目录在插件仓库里的位置是 `mini-skin/skins/maid-atelier/`。
+本目录是**构建侧**（`mini-skin/dev/maid/`）；皮肤包产物在 `mini-skin/skins/深海女仆.json`。
 
 **目录内容**
 
 | 文件 | 说明 |
 |---|---|
-| `build-deep-sea-maid-scene.py` | 把宫殿 + 左女仆 + 右女仆合成为一张画布背景（亮/暗各一张） |
-| `build-deep-sea-maid-pack.py` | 生成自包含皮肤包（图片 base64 内嵌），并做 Q 版素材的等比处理 |
-| `scene-dark.webp` / `scene-light.webp` | 合成后的 1920×1080 场景图（各约 270 KB） |
-| `深海女仆.json` | 皮肤包（1.8 MB，8 个图片槽位内嵌）—— 复制到 `<DSH_HOME>/mini-skins/` 即可用 |
+| `build-scene.py` | 把宫殿 + 左女仆 + 右女仆合成为一张画布背景（亮/暗各一张） |
+| `build-pack.py` | 生成自包含皮肤包（图片 base64 内嵌），并做 Q 版素材的等比处理 |
+| `scene-dark.webp` / `scene-light.webp` | 合成后的 1920×1080 场景图（各约 270 KB，**构建中间产物**） |
+| `../../skins/深海女仆.json` | **皮肤包产物**（1.8 MB，8 个图片槽位内嵌）—— 复制到 `<DSH_HOME>/mini-skins/` 即可用 |
 
 素材来自 `dsh-deep-whale/maid-atelier/assets/`（CC BY-NC-SA 4.0，署名链见本仓库
 `artwork/NOTICE-maid-atelier` 与 `artwork/LICENSE-ARTWORK`；**本目录不含那些原始美术文件**，只由脚本引用）。
@@ -97,8 +97,8 @@ mini-skin 只有三件事可用：**注入一张样式表**、**在 `body` 上�
 ### 怎么复现合成
 
 ```powershell
-python build-deep-sea-maid-scene.py   # 宫殿 + 双女仆 -> scene-{dark,light}.webp
-python build-deep-sea-maid-pack.py    # -> 深海女仆.json（自包含，1.8 MB）
+python build-scene.py   # 宫殿 + 双女仆 -> scene-{dark,light}.webp
+python build-pack.py    # -> ../../skins/深海女仆.json（自包含，1.8 MB）
 ```
 
 坐标全部来自原 CSS，改了原皮肤的 `height: 96%/92%` 或边缘内缩就要重跑。

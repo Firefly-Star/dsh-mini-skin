@@ -10,6 +10,13 @@ node dev/assemble.mjs                 # new-factory.txt -> lib/client.js（保�
 node --check lib/client.js            # 语法自检
 ```
 
+**每次重建都会让已打开的界面闪一下**，这是 HMR 的固有行为，不是插件的 bug：客户端 runner 换模块时
+**先停旧的、再挂新的**（`dsh-cordis-client-runner` 的 `teardown()` → `mount()`），而旧实例的 `apply()`
+在卸载时会走 `clearSettings()` —— 它 `removeProperty` 掉全部 `--dsh-mini-skin-*` 行内变量与
+`data-mini-*` 属性、并 `revokeObjectURL` 掉所有 blob URL；新实例随后重建并重新解码。
+所以"拆掉重装"中间必然有一帧是空的。**正常使用（不改插件）不会遇到**；开发时想避免，
+就把多次改动攒起来、只在要验证时重建一次。
+
 只想从零重做图片前缀（需要原始素材，见下）：
 
 ```powershell

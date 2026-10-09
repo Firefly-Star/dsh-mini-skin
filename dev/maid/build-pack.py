@@ -15,7 +15,7 @@
 """
 import base64, io, json, os, datetime
 
-# 本脚本所在目录 = 产物目录（仓库里就是 skins/深海女仆/）。
+# 本脚本所在目录 = 构建目录（仓库里是 dev/maid/）：合成图读自这里，包写到 ../../skins/。
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 素材来自隔壁的 dsh-deep-whale 仓库（本仓库不分发这些原图）。
 # 默认按 "<仓库根>/../dsh-deep-whale/maid-atelier/assets" 解析；换机器时用
@@ -114,7 +114,11 @@ pack = {
     },
 }
 
-out = os.path.join(HERE, "深海女仆.json")
+# 包写进仓库的 skins/（与 official.json / orca-link.json 并排）；合成图留在本目录，
+# 它们只是中间产物 —— 包里已经把图内嵌成 base64 了。
+SKINS_DIR = os.path.abspath(os.path.join(HERE, "..", "..", "skins"))
+out = os.path.join(SKINS_DIR, "深海女仆.json")
+os.makedirs(SKINS_DIR, exist_ok=True)
 with open(out, "w", encoding="utf-8") as fh:
     json.dump(pack, fh, ensure_ascii=False)
 print(f"pack: {out}  {round(os.path.getsize(out) / 1024)} KB")
