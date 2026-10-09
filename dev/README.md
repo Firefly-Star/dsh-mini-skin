@@ -35,6 +35,8 @@ node dev/embed-art.mjs                # 素材 -> base64 前缀
 | `verify-chain2.mjs` | 9.9 KB | 探针验证：插件装载、背景层绘制、设置分区渲染、控制台异常。 |
 | `verify-chain4.mjs` | 8.9 KB | 探针验证：切主题换预设、导出包（真实鼠标事件驱动）。 |
 | `close-chrome-9335.mjs` | 0.3 KB | 用 Browser.close 精确关掉探针 Chrome。 |
+| `perf/measure.mjs` | — | 性能测量：口径对齐 deep-whale `docs/performance-issue-114.md`（四类整轮操作 + 滚动/流式两组）。先跑 `--selftest` 验计算层。 |
+| `perf/README.md` | — | 测法、指标口径（duration / count-mean 的区别）、已知限制。 |
 
 ## 原始素材
 

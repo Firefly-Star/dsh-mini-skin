@@ -2,3 +2,4 @@
 *.tgz
 .npm-cache/
 
+dev/perf/out/
