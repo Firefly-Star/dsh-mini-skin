@@ -62,6 +62,8 @@ const RUNS = Number(process.env.PERF_RUNS ?? 3);
 const SETTLE_MS = Number(process.env.PERF_SETTLE_MS ?? 600);
 /** 侧栏/右栏有动画，采样窗口要盖住它，否则重算会落在窗口外。 */
 const COLLAPSE_SETTLE_MS = Number(process.env.PERF_COLLAPSE_MS ?? 1200);
+/** 逐键输入时字符之间的间隔（ms）。25ms ≈ 正常打字节奏（约 40 字/秒偏快，属"持续输入"）。 */
+const TYPE_DELAY_MS = Number(process.env.PERF_TYPE_DELAY_MS ?? 25);
 const OUT_DIR = resolve(process.env.PERF_OUT ?? join(HERE, "out"));
 const APP = process.env.DSH_PROBE_APP;
 const CDP = process.env.DSH_PROBE_CDP ?? "http://127.0.0.1:9335";
@@ -127,9 +129,54 @@ async function clickAt(send, x, y) {
 	await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 });
 }
 
-/** 输入文字：走 CDP 的插入文本，比逐键 dispatchKey 稳，且和真实键入的量级一致。 */
-async function typeText(send, text) {
-	await send("Input.insertText", { text });
+/** 字符 → 按键信息。宿主编辑器按真实按键处理，所以要给全 key/code/text。 */
+function keyInfo(ch) {
+	const upper = ch.toUpperCase();
+	if (ch >= "a" && ch <= "z") return { key: ch, code: `Key${upper}`, keyCode: upper.charCodeAt(0) };
+	if (ch >= "A" && ch <= "Z") return { key: ch, code: `Key${upper}`, keyCode: upper.charCodeAt(0) };
+	if (ch >= "0" && ch <= "9") return { key: ch, code: `Digit${ch}`, keyCode: ch.charCodeAt(0) };
+	if (ch === " ") return { key: " ", code: "Space", keyCode: 32 };
+	return { key: ch, code: "", keyCode: 0 };
+}
+
+/**
+ * 逐字符键入 —— **不能用 `Input.insertText` 一次性塞**：
+ * 一次性插入只产生一次 DOM 变更，而宿主的输入区每键入一个字符都会产生一批变更
+ * （幽灵文本、输入镜像、受控值回写）。用 insertText 等于把最贵的那条路径绕过去了，
+ * 测出来是"一次重排"而不是"41 次键入"。这里按真实按键逐次 dispatch，
+ * 并在字符之间保留 `delayMs`（默认 25ms，接近正常打字节奏）。
+ */
+async function typeCharByChar(send, text, delayMs) {
+	for (const ch of text) {
+		const info = keyInfo(ch);
+		await send("Input.dispatchKeyEvent", {
+			type: "keyDown",
+			key: info.key,
+			code: info.code,
+			text: ch,
+			unmodifiedText: ch,
+			windowsVirtualKeyCode: info.keyCode,
+			nativeVirtualKeyCode: info.keyCode,
+		});
+		await send("Input.dispatchKeyEvent", {
+			type: "keyUp",
+			key: info.key,
+			code: info.code,
+			windowsVirtualKeyCode: info.keyCode,
+			nativeVirtualKeyCode: info.keyCode,
+		});
+		if (delayMs > 0) await sleep(delayMs);
+	}
+}
+
+/** 真实的全选（Ctrl+A）与删除（Backspace），同样逐键。 */
+async function selectAllAndDelete(send) {
+	const modifiers = 2; // Ctrl
+	await send("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65, modifiers });
+	await send("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65, modifiers });
+	await sleep(80);
+	await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+	await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
 }
 
 // ---------------------------------------------------------------- 指标
@@ -227,16 +274,16 @@ const SELECTOR = {
 };
 
 const OPERATIONS = {
-	/** 输入 41 个字符后全选删除（与原文同长度）。 */
+	/** 逐键输入 41 个字符，再全选删除（与原文同长度、同"逐键"口径）。 */
 	input: async ({ evaluate, send }) => {
 		const box = await rectOf(evaluate, SELECTOR.composer);
 		await clickAt(send, box.x, box.y);
-		const text = "The quick brown fox jumps over the lazy dog".slice(0, 41);
-		await typeText(send, text);
 		await sleep(120);
-		await evaluate("document.execCommand !== undefined && document.execCommand('selectAll')");
-		await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
-		await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+		const text = "The quick brown fox jumps over the lazy dog".slice(0, 41);
+		await typeCharByChar(send, text, TYPE_DELAY_MS);
+		await sleep(120);
+		await selectAllAndDelete(send);
+		await sleep(120);
 	},
 	/** 左栏收起再展开。收放有动画（transition + 150ms 卸载延迟），所以每步等长一点，
 	 *  否则重算会落在采样窗口之外，被误判成"没发生操作"。 */
@@ -443,6 +490,8 @@ async function main() {
 		console.log(`  皮肤探针    ${SKIN_PROBE[SKIN] ?? "（未内置，需自行提供 --probe）"}`);
 		console.log(`  操作        ${SCENARIOS.join(", ")}${EXTRA.length > 0 ? " + " + EXTRA.join(", ") : ""}`);
 		console.log(`  轮数        ${RUNS}（每项先预热 1 次）`);
+		console.log(`  逐键输入    41 字符，字符间隔 ${TYPE_DELAY_MS}ms（PERF_TYPE_DELAY_MS 可调）`);
+		console.log(`  动画等待    ${COLLAPSE_SETTLE_MS}ms（PERF_COLLAPSE_MS 可调）`);
 		console.log(`  输出目录    ${OUT_DIR}`);
 		console.log(`  必填环境    DSH_PROBE_APP=${APP ?? "（未设置！）"}`);
 		console.log(`  可选环境    DSH_PROBE_CDP=${CDP}`);

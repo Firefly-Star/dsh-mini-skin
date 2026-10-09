@@ -57,6 +57,18 @@ console.log('\n指标总数', names.length);
 console.log('有 Duration 字段:', names.filter((n) => n.endsWith('Duration')).join(', ') || '(无)');
 console.log('有 Count 字段:   ', names.filter((n) => n.endsWith('Count')).join(', ') || '(无)');
 
+// 渲染是否在被节流：往页面里塞一个元素，看 1.2 秒内有没有发生重算/布局。
+const readMetrics = async () => Object.fromEntries((await send('Performance.getMetrics')).metrics.map((m) => [m.name, m.value]));
+const beforeRender = await readMetrics();
+await evaluate(`(() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:-9999px;width:10px;height:10px;'; d.textContent = 'render-probe'; document.body.appendChild(d); requestAnimationFrame(() => requestAnimationFrame(() => d.remove())); })()`);
+await new Promise((r) => setTimeout(r, 1200));
+const afterRender = await readMetrics();
+const moved = (n) => (afterRender[n] ?? 0) - (beforeRender[n] ?? 0);
+console.log('\n渲染自检（1.2s 内）: RecalcStyleCount Δ' + moved('RecalcStyleCount') + ', LayoutCount Δ' + moved('LayoutCount') + ', TaskDuration Δ' + (moved('TaskDuration') * 1000).toFixed(1) + 'ms');
+console.log(moved('RecalcStyleCount') === 0 && moved('LayoutCount') === 0
+	? '  → 页面被节流了：请把这个 Chrome 窗口点到前台并保持可见，否则测出来全是假数据'
+	: '  → 渲染正常，可以测量');
+
 // 皮肤库路由（节点半边是否在这个 profile 里活着）
 const route = await evaluate(`fetch('/api/dsh/mini-skins', { credentials: 'same-origin' }).then((r) => r.status).catch((e) => 'err:' + e.message)`);
 console.log('\n皮肤库路由 /api/dsh/mini-skins ->', route);
