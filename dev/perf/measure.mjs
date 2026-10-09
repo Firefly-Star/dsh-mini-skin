@@ -219,7 +219,9 @@ function pickStyleMetrics(snapshot) {
  */
 function operationCost(before, after, picked) {
 	const delta = (name) => (after[name] ?? 0) - (before[name] ?? 0);
-	const work = delta("Nodes") + delta("RecalcStyleCount") + delta("LayoutCount");
+	// 只累加**非负**增量：收起侧栏会卸载子树，节点数出现负增量。
+	// 若把负的加进去，"work" 会变成负值，看起来像"没发生操作"，把有效轮误判掉。
+	const work = Math.max(0, delta("Nodes")) + Math.max(0, delta("RecalcStyleCount")) + Math.max(0, delta("LayoutCount"));
 	if (picked.mode === "duration") {
 		const style = delta(picked.keys.style);
 		const layout = delta(picked.keys.layout);
