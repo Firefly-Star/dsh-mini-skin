@@ -1,0 +1,77 @@
+{
+ "format": "dsh-mini-skin-pack",
+ "version": 3,
+ "name": "official",
+ "savedAt": "2026-10-09T00:00:00.000Z",
+ "shared": {
+  "square": true,
+  "brandMark": "dsh",
+  "linkChip": true,
+  "uiFont": "system",
+  "sidebarFont": "inherit",
+  "packName": "官方皮肤（宿主原样）"
+ },
+ "modes": {
+  "dark:idle": {
+   "canvasImage": "dark-hero",
+   "canvasImageUrl": "",
+   "canvasFileName": "",
+   "canvasOpacity": 52,
+   "sidebarImage": "maid-left",
+   "sidebarImageUrl": "",
+   "sidebarFileName": "",
+   "sidebarOpacity": 100,
+   "sidebarOffsetX": 0,
+   "sidebarOffsetY": 0,
+   "characterImage": "none",
+   "characterFileName": "",
+   "characterHeight": 0
+  },
+  "dark:work": {
+   "canvasImage": "dark-active",
+   "canvasImageUrl": "",
+   "canvasFileName": "",
+   "canvasOpacity": 52,
+   "sidebarImage": "maid-left",
+   "sidebarImageUrl": "",
+   "sidebarFileName": "",
+   "sidebarOpacity": 100,
+   "sidebarOffsetX": 0,
+   "sidebarOffsetY": 0,
+   "characterImage": "none",
+   "characterFileName": "",
+   "characterHeight": 0
+  },
+  "light:idle": {
+   "canvasImage": "light-hero",
+   "canvasImageUrl": "",
+   "canvasFileName": "",
+   "canvasOpacity": 52,
+   "sidebarImage": "maid-left",
+   "sidebarImageUrl": "",
+   "sidebarFileName": "",
+   "sidebarOpacity": 100,
+   "sidebarOffsetX": 0,
+   "sidebarOffsetY": 0,
+   "characterImage": "none",
+   "characterFileName": "",
+   "characterHeight": 0
+  },
+  "light:work": {
+   "canvasImage": "light-active",
+   "canvasImageUrl": "",
+   "canvasFileName": "",
+   "canvasOpacity": 52,
+   "sidebarImage": "maid-left",
+   "sidebarImageUrl": "",
+   "sidebarFileName": "",
+   "sidebarOpacity": 100,
+   "sidebarOffsetX": 0,
+   "sidebarOffsetY": 0,
+   "characterImage": "none",
+   "characterFileName": "",
+   "characterHeight": 0
+  }
+ },
+ "images": {}
+}

@@ -72,13 +72,15 @@ window.__ModuleLoader__.load({
 		// 深/浅各一套预设；本地图片按 "区域:模式" 存 IndexedDB。
 		const ART_KEYS = ["canvasImage", "canvasImageUrl", "canvasFileName", "canvasOpacity", "sidebarImage", "sidebarImageUrl", "sidebarFileName", "sidebarOpacity", "sidebarOffsetX", "sidebarOffsetY", "characterImage", "characterFileName", "characterHeight"];
 		const MODE_DEFAULTS = {
-			dark: { canvasImage: "dark-hero", canvasImageUrl: "", canvasFileName: "", canvasOpacity: 52, sidebarImage: "maid-left", sidebarImageUrl: "", sidebarFileName: "", sidebarOpacity: 100, sidebarOffsetX: 0, sidebarOffsetY: 0 },
-			light: { canvasImage: "light-hero", canvasImageUrl: "", canvasFileName: "", canvasOpacity: 52, sidebarImage: "maid-left", sidebarImageUrl: "", sidebarFileName: "", sidebarOpacity: 100, sidebarOffsetX: 0, sidebarOffsetY: 0 },
+			dark: { canvasImage: "dark-hero", canvasImageUrl: "", canvasFileName: "", canvasOpacity: 52, sidebarImage: "maid-left", sidebarImageUrl: "", sidebarFileName: "", sidebarOpacity: 100, sidebarOffsetX: 0, sidebarOffsetY: 0, characterImage: "none", characterFileName: "", characterHeight: 0 },
+			light: { canvasImage: "light-hero", canvasImageUrl: "", canvasFileName: "", canvasOpacity: 52, sidebarImage: "maid-left", sidebarImageUrl: "", sidebarFileName: "", sidebarOpacity: 100, sidebarOffsetX: 0, sidebarOffsetY: 0, characterImage: "none", characterFileName: "", characterHeight: 0 },
 		};
 		const SHARED_DEFAULTS = { square: true, brandMark: "dsh", linkChip: true, uiFont: "system", sidebarFont: "inherit", packName: "", activeSkin: { kind: "custom" } };
 
 		/** 皮肤库路由（节点半边注册；同源 fetch）。 */
 		const LIBRARY_ROUTE = "/api/dsh/mini-skins";
+		/** 官方皮肤：库里的一个普通包，由节点半边保证它一定在（缺了就补）。 */
+		const OFFICIAL_FILE = "official.json";
 
 		/** 当前设置的指纹：与"应用时记下的指纹"不一致，就说明用户已经改过 = 自定义。 */
 		const fingerprint = (settings) => {
@@ -1044,27 +1046,31 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 
 			const currentHash = fingerprint(settings);
 			const activeSkin = settings.activeSkin !== null && typeof settings.activeSkin === "object" ? settings.activeSkin : { kind: "custom" };
-			const skinIsNamed = activeSkin.kind === "pack" || activeSkin.kind === "builtin";
-			const skinOnPack = skinIsNamed && activeSkin.hash === currentHash;
-			const skinStatus = activeSkin.kind === "official" ? "官方皮肤" : skinOnPack ? activeSkin.name : "自定义";
-			const skinValue = activeSkin.kind === "official" ? "official" : skinOnPack ? (activeSkin.kind === "builtin" ? "builtin" : `pack:${activeSkin.file}`) : "custom";
+			const skinOnPack = activeSkin.kind !== "official" && typeof activeSkin.hash === "string" && activeSkin.hash === currentHash;
+			// 官方皮肤是库里的一个普通包（official.json），但它的身份仍是"官方"：
+			// 渲染时会把本插件的一切撤下（宿主原样），所以它显示成一个固定名字。
+			const skinStatus = activeSkin.kind === "official" ? "官方皮肤（宿主原样）" : skinOnPack ? activeSkin.name : "自定义";
+			const skinValue = activeSkin.kind === "official" ? "official" : skinOnPack ? `pack:${activeSkin.file}` : "custom";
 
 			const applyLibrarySkin = async (value) => {
 				if (value === "custom") return;
-				if (value === "builtin") {
-					// 内置皮肤 = 出厂那套：深色→暗色场景、浅色→亮色场景、侧栏→立绘。
-					const next = buildSettings(null);
-					next.activeSkin = { kind: "builtin", name: "内置皮肤", hash: fingerprint(next) };
-					setSettings(next);
-					props.commit(next);
-					setPackStatus("已切换到内置皮肤（场景 + 立绘，深/浅各一套）。");
-					return;
-				}
 				if (value === "official") {
-					const next = { ...settings, activeSkin: { kind: "official" } };
-					setSettings(next);
-					props.commit(next);
-					setPackStatus("已切换到官方皮肤（宿主原样）。");
+					// 官方皮肤的配置也来自那个包文件，所以这里是真的读一遍（不是写死常量）。
+					setPackStatus("正在应用…");
+					try {
+						const pack = await readLibrarySkin(OFFICIAL_FILE);
+						const next = buildSettings({
+							...(pack.shared !== null && typeof pack.shared === "object" ? pack.shared : {}),
+							...(pack.modes !== null && typeof pack.modes === "object" ? pack.modes : {}),
+							packName: typeof pack.name === "string" ? pack.name : "",
+						});
+						next.activeSkin = { kind: "official", file: OFFICIAL_FILE, name: "官方皮肤（宿主原样）", hash: fingerprint(next) };
+						setSettings(next);
+						props.commit(next);
+						setPackStatus("已切换到官方皮肤（宿主原样）。");
+					} catch (error) {
+						setPackStatus(`切换官方皮肤失败：${error !== null && error !== undefined && error.message !== undefined ? error.message : String(error)}`);
+					}
 					return;
 				}
 				const file = value.startsWith("pack:") ? value.slice(5) : value;
@@ -1134,13 +1140,13 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 				React.createElement("div", { style: GROUP_TITLE_STYLE }, "应用已有皮肤"),
 				Row(
 					"正在使用",
-					libraryError === "" ? `皮肤库：${library.filter((row) => row.ok).length} 个可用${library.length > library.filter((row) => row.ok).length ? `，${library.length - library.filter((row) => row.ok).length} 个无法解析` : ""}` : libraryError,
+					libraryError === "" ? `皮肤库：${library.filter((row) => row.ok && row.file !== OFFICIAL_FILE).length} 个可用${library.filter((row) => !row.ok).length > 0 ? `，${library.filter((row) => !row.ok).length} 个无法解析` : ""}` : libraryError,
 					Select(
 						skinValue,
 						[
 							{ value: "official", label: "官方皮肤（宿主原样）" },
-							{ value: "builtin", label: "内置皮肤（深海鲸鱼场景 + 立绘）" },
-							...library.map((row) => ({ value: `pack:${row.file}`, label: row.ok ? `皮肤：${row.name}` : `⚠ ${row.file}（${row.error}）`, disabled: !row.ok })),
+							// official.json 不进这个列表：上面那一项就是它，否则会重复出现两条官方皮肤。
+							...library.filter((row) => row.file !== OFFICIAL_FILE).map((row) => ({ value: `pack:${row.file}`, label: row.ok ? `皮肤：${row.name}` : `⚠ ${row.file}（${row.error}）`, disabled: !row.ok })),
 							...(skinValue === "custom" ? [{ value: "custom", label: "自定义（当前设置）" }] : []),
 						],
 						(value) => void applyLibrarySkin(value),
@@ -1301,6 +1307,50 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 			detectedWorking = readWorking();
 			applySettings(claimant, settings);
 
+			// 当前皮肤来自皮肤库时，用磁盘上的包重新推导一次设置在启动时也要做 ——
+			// 否则「官方皮肤」的配置就会退回代码里的默认值（它现在是一份包文件，不是常量）；
+			// 顺便也让"在磁盘上改过包、刷新页面"能生效。落地前先比指纹，没变就一个字节都不动。
+			const hydrateFromLibrary = async () => {
+				try {
+					const skin = settings.activeSkin;
+					if (skin === null || typeof skin !== "object") return;
+					const official = skin.kind === "official";
+					let file = official ? OFFICIAL_FILE : skin.kind === "pack" && typeof skin.file === "string" && skin.file !== "" ? skin.file : "";
+					if (file === "") return;
+					let pack = null;
+					try {
+						pack = await readLibrarySkin(file);
+					} catch {
+						// 这个文件不在了（被删或被改名）：按包名在库里找同名的那份接手，
+						// 让活动皮肤自己认得回来，而不是卡在一个不存在的文件上。
+						if (official) throw new Error("官方皮肤包缺失");
+						const wanted = typeof skin.name === "string" ? skin.name : "";
+						const rows = wanted === "" ? [] : (await fetchLibrary()).skins;
+						const replacement = rows.find((row) => row.ok === true && row.name === wanted && row.file !== file);
+						if (replacement === undefined) throw new Error("皮肤包不存在");
+						file = replacement.file;
+						pack = await readLibrarySkin(file);
+					}
+					const next = official
+						? buildSettings({
+							...(pack.shared !== null && typeof pack.shared === "object" ? pack.shared : {}),
+							...(pack.modes !== null && typeof pack.modes === "object" ? pack.modes : {}),
+							packName: typeof pack.name === "string" ? pack.name : "",
+						})
+						: (await applySkinPack(pack, { file })).settings;
+					next.activeSkin = official
+						? { kind: "official", file: OFFICIAL_FILE, name: "官方皮肤（宿主原样）", hash: fingerprint(next) }
+						: { ...skin, file, name: next.packName === "" ? file : next.packName, hash: fingerprint(next) };
+					if (fingerprint(next) === fingerprint(settings) && next.activeSkin.file === skin.file) return;
+					settings = next;
+					persistSettings(next);
+					if (document.body !== null) applySettings(claimant, next);
+				} catch {
+					/* 皮肤包读不到（被删了 / 路由还没起来）：保持当前设置 */
+				}
+			};
+			void hydrateFromLibrary();
+
 			// 状态轮询：只在状态真的变了时重放设置；面板编辑期间由 workOverride 接管。
 			// 整段包在 try 里：这是定时器，一旦抛出且没人接住，就会按 0.4 秒的节奏刷屏并让
 			// 皮肤状态卡死在出错的那一拍。
@@ -1319,6 +1369,10 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 
 			// 启动时预热本地图片的 blob URL（存在 IndexedDB 里），再重放一次设置；
 			// 之后就交给 artUrl 的惰性缓存，用到哪张取哪张。
+			//
+			// 顺序：先按已落地的设置把画面铺好（上面那次 applySettings），再读皮肤包推导
+			// 一次（hydrateFromLibrary）。包里引用的本地图会被 applySkinPack 写回存储并进
+			// 缓存，所以它结束时可以直接再套一遍。
 			void (async () => {
 				for (const slot of ART_SLOTS) {
 					try {

@@ -80,25 +80,34 @@ node dev/close-chrome-9335.mjs
 
 ```
 dev/anim/slice-atlas.py          图集 → 每行一个动画（row0..row9）
-dev/anim/build-standby-skin.py   空闲（standby，第 0 行）→ 皮肤「虎鲸动图立绘（空闲）」
-dev/anim/build-orca-replica.py   工作（working，第 2 行）→ 皮肤「虎鲸链路（复刻）」
+dev/anim/build-standby-skin.py   空闲（standby，第 0 行）→ 一份 v2 皮肤包
+dev/anim/build-orca-replica.py   工作（working，第 2 行）→ 一份 v2 皮肤包
+dev/anim/build-seamless-idle.py  无接缝空闲闭环 → 「虎鲸链路」四态包
 dev/anim/check-anim.py           校验：帧数 / 时长 / 是否真是动画
-skins/*.webp                     烘焙好的动图（standby 6 帧 3.35s / working 8 帧 0.66s）
-skins/*.json                     可直接放进 <DSH_HOME>/mini-skins/ 的皮肤包
 ```
+
+**注意（现状）**：这些脚本是**历史复现手段**，不是仓库内容的生成器 —— 它们从工作区外的素材目录读图、把产物写到 `$DSH_HOME/mini-skins/`，**不写回本仓库**。仓库里现在只有两份手工维护的包：
+
+| 文件 | 说明 |
+|---|---|
+| `skins/official.json` | 官方皮肤的配置（1.7 KB，纯内置素材引用）。节点半边也会在库缺它时补一份，两份内容需一致 |
+| `skins/orca-link.json` | 虎鲸链路示例包（四态、主内容不透明度 深 90 / 亮 65、8 张动图槽位内嵌） |
+
+早先放在 `skins/` 的 `*.webp` 与 v2 迭代包（`orca-link-replica` / `whale-standby-anim` / `idle-*` 系列）已经清掉：它们是同一件事的中间产物，需要时可从 git 历史取回，或按上面脚本从原始素材重跑（原始素材不在本仓库，见下）。
 
 关键数值（源码 `status-character.ts` 与实测）：
 
 | 项 | 值 |
 |---|---|
 | 行映射 | `standby:0  syncing:1  working:2  approval:3  input:4  review:5  complete:6  fault:7  offline:8  ready:9` |
-| 空闲帧序 | `[0,0,0,0,1,2,3,2,1]`，时长 `[700,700,700,700,130,90,110,90,130]`（一轮 3.35s） |
+| 空闲帧序 | `[0,1,2,3,2,1]`（回文式，接缝不静止）；早期 `[0,0,0,0,1,2,3,2,1]` 一轮 3.35s |
 | 工作帧序 | `[0..7]`，固定 83ms/帧（12fps，一轮 0.66s） |
 | 对齐 | 以 **standby 帧 0 的 alpha 质心**为全局锚点，逐帧补偿（实测 working 各帧需 +4.5…+6.4px）；值是**从图集算出来的**，图集换了要重算 |
 
 ## v3：四套预设与工作状态检测
 
-- 预设键：dark:idle / dark:work / light:idle / light:work；图片槽位同步扩为「区域:模式:状态」（8 槽），旧的 canvas:dark 与更早的 canvas 仍会兜底读到。
+- 预设键：dark:idle / dark:work / light:idle / light:work；图片槽位同步扩为「区域:模式:状态」（12 槽），旧的 canvas:dark 与更早的 canvas 仍会兜底读到。
 - 检测：首选会话级 `[data-chat-running]`（整轮在跑：思考 / 流式 / 执行工具 / 压缩都在），兜底才是 `[data-state=running]` 与 `[data-composer-input][data-phase]`（后者只有 submitting/adjudicating 两个瞬时相位，工具执行与纯思考时都不成立 —— 只用兜底的那版把它们误判成空闲）。刻意不用 MutationObserver（原皮肤用了整个 body 的观察器）。
 - 动图闭环：循环接缝必须落在小变化上。曾用 [0,0,1,2,3,2,1,0]（首末同帧）导致接缝处帧 0 连播 720ms，肉眼可见地静止一下；改成回文式 [0,1,2,3,2,1] 后接缝像素差 4.19（与内部帧间同量级）。dev/anim/build-seamless-idle.py 会把接缝差异打印出来。
-- 副作用：皮肤包已选中时受控下拉的同值不触发 onChange，所以换包后需要「官方皮肤 → 再选回」，或等一个「重新应用」按钮。
+- 官方皮肤 = 库里的 `official.json`（不再有代码内的 `builtin` 状态）。节点半边在**每次读列表**时保证这份包存在；客户端按文件名引用它，所以入库时官方包被强制落到 `official.json`。
+- 副作用：皮肤包已选中时受控下拉的同值不触发 onChange，所以换包后需要「官方皮肤 → 再选回」，或点「重新应用」按钮。

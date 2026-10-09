@@ -28,14 +28,17 @@ dsh plugin --profile web add '<绝对路径>\dsh-mini-skin-0.1.0.tgz'
 
 ## 功能
 
-### 四种皮肤状态
+### 三种皮肤状态
 
 | 状态 | 含义 |
 |---|---|
-| **官方皮肤** | 宿主原样：本插件的样式表、`body` 属性、行内变量**全部撤下**（插件本体仍在，设置分区照旧可用） |
-| **内置皮肤** | 出厂那套：深色→暗色场景、浅色→亮色场景、侧栏→maid-atelier 立绘 |
-| **皮肤库里的皮肤** | 插件自带目录中的 `.json` 包，名字取自包内 `name` |
+| **官方皮肤** | 宿主原样：本插件的样式表、`body` 属性、行内变量**全部撤下**（插件本体仍在，设置分区照旧可用）。它自己也是一份皮肤包 —— 见下 |
+| **皮肤库里的皮肤** | `<DSH_HOME>/mini-skins/` 里的 `.json` 包，名字取自包内 `name` |
 | **自定义** | 当前设置的指纹与应用皮肤时记下的指纹不符（即你改过任何一项） |
+
+**官方皮肤是一份包文件，不是代码里的常量。** 它就是库里的 `official.json`：深色→暗色场景、浅色→亮色场景、侧栏→maid-atelier 立绘，主内容不透明度 52 / 侧栏 100，素材按名字引用（`dark-hero` / `maid-left` …），所以只有 1.7 KB、不带图片字节。插件在**每次读取皮肤库列表时**检查它是否还在，缺了就补一份（判据是**包名**，所以你自己另存或改名的那份不会被覆盖）。你在面板里选「官方皮肤」时，客户端是真的去读这个文件来推导配置 —— 「宿主原样」这层语义（撤下插件的一切）仍然是渲染规则，配置本身已经全部外置。
+
+`official.json` 不单独出现在「正在使用」的下拉里，因为那一项就是它。
 
 ### 四套预设：主题 × 状态
 
@@ -93,28 +96,34 @@ DELETE ?file=<名字>   -> 删除
 
 - 只处理目录里**直接的 `*.json`**；请求只能**点名文件**，不能给路径（`basename` + 白名单正则双重校验）。
 - 解析不了的文件**不隐藏**，在下拉里**标灰并给出原因**（`JSON 解析失败` / `format 不符` / `读取失败：<code>`）。
+- **官方皮肤包固定落到 `official.json`**：客户端按文件名引用它，否则"按包名自动命名"会为中文名再写一份、库里出现两个官方皮肤。
+- 列表里的 `official.json` 被客户端过滤掉（下拉里那一项就是它）。
 - **导出 = 两件事都做**：下载 `<名称>-<日期>.json` **并且**存入皮肤库（状态行分别报告两边结果）。
 - **导入**：系统文件选择器读一个 `.json`，图片写回本机存储后立即套用。
+- 当前皮肤的那个包**被删或改名**时，客户端启动会按**包名**在库里找同名的一份接手，让活动皮肤认得回来。
 
 ### 包格式（自包含）
 
 ```json
 {
   "format": "dsh-mini-skin-pack",
-  "version": 2,
+  "version": 3,
   "name": "我的皮肤",
   "savedAt": "2026-...",
   "shared": { "square": true, "brandMark": "dsh", "linkChip": true, "uiFont": "system", "sidebarFont": "inherit", "packName": "我的皮肤" },
   "modes": {
-    "dark":  { "canvasImage": "dark-hero", "canvasOpacity": 52, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 },
-    "light": { "canvasImage": "light-hero", "canvasOpacity": 52, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 }
+    "dark:idle":  { "canvasImage": "dark-hero", "canvasOpacity": 90, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 },
+    "dark:work":  { "canvasImage": "dark-active", "canvasOpacity": 90, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 },
+    "light:idle": { "canvasImage": "light-hero", "canvasOpacity": 65, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 },
+    "light:work": { "canvasImage": "light-active", "canvasOpacity": 65, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 }
   },
-  "images": { "sidebar:dark": "data:image/webp;base64,..." }
+  "images": { "sidebar:dark:idle": "data:image/webp;base64,..." }
 }
 ```
 
-- **内置素材按名字引用**（`dark-hero` / `light-hero` / `maid-left` ...），不重复打包 -> 纯内置配置的包只有几 KB。
-- **本地图片的字节内嵌**进 `images`（键为 `区域:模式`）-> 换台机器导入即用，**不需要原文件**。
+- 四套预设键：`dark:idle` / `dark:work` / `light:idle` / `light:work`；v2 的 `dark` / `light` 仍能导入（映射到该主题的两套）。
+- **内置素材按名字引用**（`dark-hero` / `light-hero` / `maid-left` ...），不重复打包 -> 纯内置配置的包只有几 KB（`skins/official.json` 1.7 KB 就是这么来的）。
+- **本地图片的字节内嵌**进 `images`（键为 `区域:模式:状态`）-> 换台机器导入即用，**不需要原文件**。
 - `activeSkin`（皮肤库身份）**不进包**：由导入方在导入后决定。
 - 因此"自包含"是结构上的保证：只涉及本地图片，没有跨域 / 失效链接的可能。
 
@@ -136,15 +145,16 @@ DELETE ?file=<名字>   -> 删除
 
 | 路径 | 说明 |
 |---|---|
-| `lib/index.js` | **节点半边**：皮肤库目录 + `/api/dsh/mini-skins` 路由（`ctx.inject(["webServer"], ...)` + `server.register`） |
-| `lib/client.js` | **浏览器半边**（提交型产物，460 KB，含 5 张内嵌图）：样式表、生命周期、设置分区、皮肤库客户端 |
+| `lib/index.js` | **节点半边**：皮肤库目录 + `/api/dsh/mini-skins` 路由（`ctx.inject(["webServer"], ...)` + `server.register`）+ 官方皮肤包的持有与自愈 |
+| `lib/client.js` | **浏览器半边**（提交型产物，约 473 KB，含 5 张内嵌图）：样式表、生命周期、设置分区、皮肤库客户端 |
 | `package.json` | `dsh.bundle.patch` / `dsh.client` / `exports`（含 `./locale/*.json`）/ `files` 白名单 |
 | `cordis.patch.yml` | bundle patch：插入插件行 |
 | `locale/{zh,en}.json` | 插件菜单的本地化名称与简介 |
 | `assets/plugin-icon.svg` | 插件图标（自绘，无第三方美术） |
 | `artwork/` | 署名与许可 |
-| `skins/` | 烘焙好的动图与可直接放进皮肤库的示例皮肤包 |
-| `dev/anim/` | 动画管线：状态图集切片、质心对齐、皮肤包生成、接缝校验 |
+| `skins/official.json` | 官方皮肤包（1.7 KB，纯内置素材引用）：深色→暗色场景、浅色→亮色场景、侧栏→立绘 |
+| `skins/orca-link.json` | 虎鲸链路示例包（四态：深色 90% / 亮色 65% 主内容不透明度 + 8 张动图槽位） |
+| `dev/anim/` | 动画管线（图集切片、质心对齐、皮肤包生成、接缝校验）：**产出落在 `$DSH_HOME/mini-skins`，不写回本仓库**，留作复现手段 |
 
 ---
 
@@ -185,6 +195,8 @@ node dev/verify-chain4.mjs
 
 **只有静态核查**：勾选式 UI、皮肤库路由的运行时行为、导入流程、v3 四套预设的迁移路径。
 
+**未验证（刚做的改动）**：「官方皮肤改为库里的 `official.json`」这条只做了静态核查 + 用真实路由做了一次入库/读取往返（1787 字节、四套预设键正确、库列表里只剩官方与虎鲸链路两份），**还没在界面上点过** —— 需要重启 DSH 让节点半边的新代码生效后再验一次。
+
 **探针 / 实测抓出并修掉的真 bug**（留存记录）：
 
 1. 行内样式写几百 KB 的 data URI -> 图不显示、换图无效（**图片数据必须留在样式表**）
@@ -196,6 +208,8 @@ node dev/verify-chain4.mjs
 7. **面板改任何值都会被"重新读皮肤包"覆盖回去**（过 0.几秒回退成当前皮肤的原配置）。根因：改值走的是 `reapply()`，而它为了"磁盘上更新过的包点了也能生效"会重新读包、**把读回来的旧配置写回 settings 并落盘**。修法：改值只走纯套用的 `preview()`（不落盘、不读包），`reapply()` 也改成只影响页面、绝不写回设置
 8. 工作状态误判：只用 `[data-state='running']` + composer `data-phase` 时，**执行工具 / 纯深度思考**会被判成空闲（那两个相位在这两种时刻都不成立）。改为以会话级的 `[data-chat-running]` 为首选判据
 9. `fileUrls` 只预置了四个旧的两段键（`canvas:dark`…），而读写都用三段键（`canvas:dark:idle`）—— 对象上根本没有那些键，读到的是 `undefined`：行内出现 `url("undefined")` 让图不显示，`undefined !== null` 又让卸载时 `revokeObjectURL(undefined)` 抛异常、把整段清理中断。改为 Map + 惰性读取（读到才缓存，读不到就是"没有这张图"）
+10. 「官方皮肤」以前把配置写死在代码里（一个 `builtin` 状态 + 一组默认常量），于是"官方"与"包"两套语义并存、面板里出现两个近义条目。改为：官方皮肤就是库里的 `official.json`，插件在读取列表时保证它存在（判据是**包名**，不覆盖用户改过的那份）；面板里 `official.json` 不再单独出现
+11. 官方皮肤包入库时按包名生成文件名，中文名被净化成别的名字，客户端按 `official.json` 找不到它 → 库里出现两个官方皮肤。改为：官方包固定落到 `official.json`
 
 ---
 
