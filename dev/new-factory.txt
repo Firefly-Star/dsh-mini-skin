@@ -244,17 +244,33 @@ body[${BODY_ATTRIBUTE}][data-mini-sidebar-font] [data-slot='sidebar'] > * {
 /* ---- 顶部角色图 ----
    工作区面板的 ::before 作为流内方块：它是面板的第一个流内子元素，正好落在 DSH 字标与
    LINK ACTIVE 那一行下面。高宽同值 = 正方形，高度由设置给（0 = 关闭）。伪元素不是 DOM
-   节点，因此不引入元素插入，也不需要观察器。 */
+   节点，因此不引入元素插入，也不需要观察器。
+
+   flex-shrink: 0 这两条是**必须**的：宿主侧栏是
+   .regionArea{flex:1;min-height:0} > .root{flex:1;min-height:0;flex-direction:column}，
+   我们这块是那一列里的 flex item。不给 shrink:0，窗口一变矮它就先被压 —— 而且压的是**盒子**，
+   background-size:contain 只会把画裁掉、不会跟着缩小（看起来就是"图不变、工作区先没"）。
+   锁定之后，图的尺寸完全由 --dsh-mini-skin-character-h 决定，而那个值现在是
+   clamp(72px, 18vh, 用户设定)（见 applySettings）：窗口变矮时图按比例缩，工作区列表始终留着空间。
+   下面再给工作区面板一条兜底 min-height，保证极矮窗口下至少还能点到一行会话。 */
 body[${BODY_ATTRIBUTE}][data-mini-character] [data-slot='sidebar.workspaces'] > *::before {
   content: "";
   display: block;
+  flex: none;
   width: ${inlineVar("--dsh-mini-skin-character-h")};
   height: ${inlineVar("--dsh-mini-skin-character-h")};
+  max-height: 40vh;
   margin: 0 auto 6px;
   background-image: ${inlineVar("--dsh-mini-skin-character-art")};
   background-size: contain;
   background-position: center bottom;
   background-repeat: no-repeat;
+}
+
+/* 极矮窗口的兜底：工作区面板自己也是 flex:1;min-height:0，会被压到 0 直到行都点不到。
+   指定一个"至少一行"的下限；面板内本来就有滚动，所以多出来的内容会滚而不是被切。 */
+body[${BODY_ATTRIBUTE}][data-mini-character] [data-slot='sidebar.workspaces'] > * {
+  min-height: 96px;
 }
 
 /* ---- 全直角契约（可在设置里关掉，回到宿主原生圆角）---- */
@@ -451,7 +467,10 @@ body[${BODY_ATTRIBUTE}][data-mini-brand='dsh'][data-mini-chip] [data-window-drag
 			const characterArt = characterChoice === "file" ? ART_SLOT_CACHE.get(characterSlot) : null;
 			if (characterHeight > 0 && characterArt !== null && characterArt !== undefined) {
 				body.setAttribute("data-mini-character", "");
-				body.style.setProperty("--dsh-mini-skin-character-h", `${characterHeight}px`);
+				// 别写死 px：侧栏里那块图是固定尺寸的 flex item，写死就会在窗口变矮时和工作区列表
+				// 抢空间（工作区先被压没，图最后才缩）。这里让它跟着视口高度走，
+				// 上限仍是用户设的值 —— 变矮时图和列表一起缩，至少不会把列表整体挤掉。
+				body.style.setProperty("--dsh-mini-skin-character-h", `clamp(72px, 18vh, ${characterHeight}px)`);
 				body.style.setProperty("--dsh-mini-skin-character-art", `url("${characterArt}")`);
 			} else {
 				body.removeAttribute("data-mini-character");
