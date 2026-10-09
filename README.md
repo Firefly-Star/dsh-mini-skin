@@ -17,7 +17,7 @@ dsh plugin --profile web add '<绝对路径>\mini-skin'
 
 # tarball（复制安装，工作区目录不再是运行依赖）
 npm pack --pack-destination .
-dsh plugin --profile web add '<绝对路径>\dsh-mini-skin-0.1.0.tgz'
+dsh plugin --profile web add '<绝对路径>\dsh-mini-skin-0.3.0.tgz'
 ```
 
 本插件**未发布到 npm**（npm 上没有 `dsh-mini-skin`）：请用上面的 GitHub 或 tarball 方式安装。从 GitHub/tarball 安装是**复制**安装——本地源码的改动不会再影响已装版本。
