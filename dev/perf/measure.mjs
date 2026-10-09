@@ -197,10 +197,28 @@ async function rectOf(evaluate, selector) {
 	return box;
 }
 
+/**
+ * 宿主里的稳定选择器 —— 都从宿主源码里核过，不是猜的：
+ *   侧栏收放  dsh-client-ui-sidebar：按钮 `aria-label` = t("toggle.open") / t("toggle.collapse")
+ *             zh 文案「打开侧边栏」/「收起侧边栏」；点两次即"收放"一轮。
+ *   右栏收放  dsh-client-ui-sidebar-right：`[data-sidebar-right-expand]` 开、
+ *             `[data-sidebar-right-toggle]` 收。
+ *   输入框    dsh-client-ui-conversation：`[data-composer-input]`、`[data-composer-card]`。
+ *   会话行    dsh-client-ui-workspace：`role="treeitem"`（在工作区树里）。
+ */
+const SELECTOR = {
+	composer: "[data-composer-input]",
+	sidebarToggle: "[aria-label='打开侧边栏'], [aria-label='收起侧边栏'], [aria-label='Open sidebar'], [aria-label='Collapse sidebar']",
+	rightbarExpand: "[data-sidebar-right-expand]",
+	rightbarToggle: "[data-sidebar-right-toggle]",
+	scrollRegion: "[data-conversation-scroll], [data-slot='conversation.content'], main",
+	sessionRows: "[data-slot='sidebar.workspaces'] [role='treeitem']",
+};
+
 const OPERATIONS = {
 	/** 输入 41 个字符后全选删除（与原文同长度）。 */
 	input: async ({ evaluate, send }) => {
-		const box = await rectOf(evaluate, "[data-composer-input]");
+		const box = await rectOf(evaluate, SELECTOR.composer);
 		await clickAt(send, box.x, box.y);
 		const text = "The quick brown fox jumps over the lazy dog".slice(0, 41);
 		await typeText(send, text);
@@ -211,33 +229,33 @@ const OPERATIONS = {
 	},
 	/** 左栏收起再展开。 */
 	sidebar: async ({ evaluate, send }) => {
-		const box = await rectOf(evaluate, "[data-slot='sidebar.toggle'], [aria-label*='侧栏'], [aria-label*='Sidebar']");
+		const box = await rectOf(evaluate, SELECTOR.sidebarToggle);
 		await clickAt(send, box.x, box.y);
 		await sleep(SETTLE_MS);
-		const again = await rectOf(evaluate, "[data-slot='sidebar.toggle'], [aria-label*='侧栏'], [aria-label*='Sidebar']");
+		const again = await rectOf(evaluate, SELECTOR.sidebarToggle);
 		await clickAt(send, again.x, again.y);
 	},
-	/** 会话 A → B → A（用侧栏里的会话行）。 */
+	/** 会话 A → B → A（用侧栏工作区树里的行）。 */
 	session: async ({ evaluate, send }) => {
 		const rows = await evaluate(`(() => {
-			const list = [...document.querySelectorAll("[data-slot='sidebar.workspaces'] [role='treeitem'], [data-slot='sidebar.workspaces'] button")]
+			const list = [...document.querySelectorAll(${JSON.stringify(SELECTOR.sessionRows)})]
 				.filter((el) => el.getBoundingClientRect().height > 8);
 			if (list.length < 2) return null;
 			return list.slice(0, 2).map((el) => { el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
 		})()`);
-		if (rows === null) throw new Error("侧栏里找不到两个可点的会话/工作区行");
+		if (rows === null) throw new Error("侧栏工作区树里找不到两个可点的行（会话太少？）");
 		await clickAt(send, rows[0].x, rows[0].y);
 		await sleep(SETTLE_MS);
 		await clickAt(send, rows[1].x, rows[1].y);
 		await sleep(SETTLE_MS);
 		await clickAt(send, rows[0].x, rows[0].y);
 	},
-	/** 右栏展开再收起（没有右栏时不测）。 */
+	/** 右栏展开再收起。 */
 	rightbar: async ({ evaluate, send }) => {
-		const box = await rectOf(evaluate, "[data-slot='sidebar.right'], [aria-label*='右栏'], [aria-label*='Right']");
+		const box = await rectOf(evaluate, SELECTOR.rightbarExpand);
 		await clickAt(send, box.x, box.y);
 		await sleep(SETTLE_MS);
-		const again = await rectOf(evaluate, "[data-slot='sidebar.right'], [aria-label*='右栏'], [aria-label*='Right']");
+		const again = await rectOf(evaluate, SELECTOR.rightbarToggle);
 		await clickAt(send, again.x, again.y);
 	},
 };
@@ -279,7 +297,7 @@ function frameStats(gaps) {
 
 /** 滚动场景：让对话区滚一段，同时采帧。 */
 async function scenarioScroll({ send, evaluate }, ms = 3000) {
-	const box = await rectOf(evaluate, "[data-slot='conversation.content'], [data-conversation-scroll], main");
+	const box = await rectOf(evaluate, SELECTOR.scrollRegion);
 	const collecting = evaluate(RAF_COLLECTOR(ms));
 	for (let i = 0; i < 12; i += 1) {
 		await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: i % 2 === 0 ? 240 : -240 });
