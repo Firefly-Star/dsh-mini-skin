@@ -17,6 +17,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(process.argv[2] ?? join(HERE, "..", "..", "..", "docs", "zhihu-screenshots"));
 mkdirSync(OUT, { recursive: true });
+/** 默认 JPEG：皮肤截图是照片性内容，PNG 一张约 2.5MB，JPEG 约 250KB。设 --png 可换回。 */
+const SHOT_FORMAT = process.argv.includes("--png") ? "png" : "jpeg";
+const SHOT_QUALITY = 88;
 
 const CDP = process.env.DSH_PROBE_CDP ?? "http://127.0.0.1:9335";
 const targets = await (await fetch(`${CDP}/json/list`)).json();
@@ -128,12 +131,14 @@ async function describeSkin() {
 }
 
 async function shoot(name, clip) {
-	const params = { format: "png", captureBeyondViewport: false };
+	// 默认出 JPEG：皮肤截图是照片性内容，PNG 一张 2.5MB（2561×1398），JPEG 只要约 250KB。
+	const params = { format: SHOT_FORMAT, captureBeyondViewport: false };
+	if (SHOT_FORMAT === "jpeg") params.quality = SHOT_QUALITY;
 	if (clip !== undefined) params.clip = { ...clip, scale: 1 };
 	const result = await send("Page.captureScreenshot", params);
 	const buffer = Buffer.from(result.data, "base64");
-	writeFileSync(join(OUT, `${name}.png`), buffer);
-	console.log(`  ${name}.png  ${Math.round(buffer.length / 1024)} KB`);
+	writeFileSync(join(OUT, `${name}.${SHOT_FORMAT === "jpeg" ? "jpg" : "png"}`), buffer);
+	console.log(`  ${name}.${SHOT_FORMAT === "jpeg" ? "jpg" : "png"}  ${Math.round(buffer.length / 1024)} KB`);
 }
 
 /** 退出所有弹层（右侧工作台、下拉等不入镜）。 */
@@ -217,29 +222,34 @@ await openPanel();
 	await sleep(600);
 	await shoot("10-settings-bottom", clip);
 
-	// 取消"主内容 · 有背景图"勾选，截"整行隐藏"的对比
-	const toggled = await evaluate(`(() => {
-    const dialog = document.querySelector("[role='dialog']");
-    const label = [...dialog.querySelectorAll("*")].find((el) => el.children.length === 0 && (el.textContent || "").trim() === "主内容 · 有背景图");
-    if (label === undefined) return "找不到这一行";
-    const row = label.closest("div")?.parentElement ?? label.parentElement;
-    const control = row?.querySelector("input[type='checkbox'], [role='switch'], button");
-    if (control === undefined || control === null) return "找不到开关";
-    control.click();
-    return "已点击";
+	// 取消"主内容 · 有背景图"勾选，截"整行隐藏"的对比。
+	// 宿主的开关是自定义 Switch：`button[role='switch'][aria-label='主内容有背景图']`，
+	// 而且这个面板只对真实鼠标事件有反应，所以用坐标点击、不用 element.click()。
+	const toggleBox = await evaluate(`(() => {
+    const el = document.querySelector("[role='dialog'] button[role='switch'][aria-label='主内容有背景图']");
+    if (el === null) return null;
+    el.scrollIntoView({ block: "center" });
+    const r = el.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, checked: el.getAttribute("aria-checked") };
   })()`);
-	console.log("取消勾选:", toggled);
-	await sleep(1000);
-	await shoot("11-settings-unchecked", clip);
-	// 恢复勾选
-	await evaluate(`(() => {
-    const dialog = document.querySelector("[role='dialog']");
-    const label = [...dialog.querySelectorAll("*")].find((el) => el.children.length === 0 && (el.textContent || "").trim() === "主内容 · 有背景图");
-    const row = label?.closest("div")?.parentElement ?? label?.parentElement;
-    const control = row?.querySelector("input[type='checkbox'], [role='switch'], button");
-    if (control) control.click();
-  })()`);
-	await sleep(800);
+	if (toggleBox === null) {
+		console.log("  ⚠ 找不到「主内容 有背景图」开关，第 11 张跳过");
+	} else {
+		console.log(`  开关当前 aria-checked=${toggleBox.checked}，点击取消勾选`);
+		await click(toggleBox.x, toggleBox.y);
+		await sleep(1200);
+		const after = await evaluate(`document.querySelector("[role='dialog'] button[role='switch'][aria-label='主内容有背景图']")?.getAttribute("aria-checked")`);
+		console.log(`  点击后 aria-checked=${after}`);
+		await shoot("11-settings-unchecked", clip);
+		// 恢复勾选（否则会把用户的配置改掉）
+		const back = await evaluate(`(() => { const el = document.querySelector("[role='dialog'] button[role='switch'][aria-label='主内容有背景图']"); if (el === null) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+		if (back !== null) {
+			await click(back.x, back.y);
+			await sleep(1000);
+			const restored = await evaluate(`document.querySelector("[role='dialog'] button[role='switch'][aria-label='主内容有背景图']")?.getAttribute("aria-checked")`);
+			console.log(`  已恢复：aria-checked=${restored}`);
+		}
+	}
 }
 
 await closePanel();
