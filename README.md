@@ -1,4 +1,4 @@
-﻿# dsh-mini-skin
+# dsh-mini-skin
 
 一个只注入样式表的 DSH 皮肤插件，带一个**自包含的皮肤库**。所有开关集中在 **设置 → 自定义皮肤** 一个分区里。
 
@@ -43,7 +43,15 @@ dsh plugin --profile web add '<绝对路径>\dsh-mini-skin-0.1.0.tgz'
 
 生效组合 = 当前主题 × 当前状态（是否正在工作）；主题事件与状态变化都会重放设置。
 
-**工作状态怎么检测**：宿主只在 DOM 上暴露状态（没有服务、没有事件），所以每 0.4 秒读一次 [data-state=running] 与 [data-composer-input][data-phase]。原皮肤为此挂了整个 body 的 MutationObserver；本插件改用一个定时器（每轮一两次 querySelector）—— 代价是切换最多延迟 0.4 秒，收益是保住 0 观察器。
+**工作状态怎么检测**：宿主只在 DOM 上暴露状态（没有服务、没有事件），所以每 0.4 秒读一次 DOM。判据按可靠性排序：
+
+1. **`[data-chat-running]`** —— 会话级的"整轮在跑"标记（chat 视图的 `RunningStatus`，源码注释写明 *mount only while the Session is running*）。它覆盖**整轮**：思考、流式输出、执行工具、压缩上下文……只要这一轮没结束就在。这是首选判据。
+2. `[data-state='running']` —— 单个节点（推理行 / 工具卡 / 命令卡）**自己**还在流式时的标记，会被 settle 掉，只作兜底。
+3. `[data-composer-input][data-phase]` —— 只有"提交中 / 裁决中"两个瞬时相位，同样只作兜底，**不代表整轮在跑**。
+
+> 教训：只用了 2) 和 3) 的版本把"执行工具 / 纯深度思考"误判成空闲——那两个相位在这两种时刻都不成立。
+
+原皮肤为此挂了整个 body 的 MutationObserver；本插件改用一个定时器（每轮一两次 querySelector）—— 代价是切换最多延迟 0.4 秒，收益是保住 0 观察器。
 
 面板顶部的「**正在编辑**」是四选一：切换它会调用宿主的 theme.setTheme() 把界面主题真的切过去、并临时把预览状态切到空闲或工作，所以你改什么就能立刻看到什么；关掉面板后交还给自动检测。在某一套里改任何值也会先确保该套生效。
 
@@ -117,7 +125,7 @@ DELETE ?file=<名字>   -> 删除
 | 位置 | 内容 |
 |---|---|
 | `localStorage['dsh-mini-skin:settings:v1']` | 设置 v2：`{ version, dark{10 项}, light{10 项}, square, brandMark, linkChip, uiFont, sidebarFont, packName, activeSkin }` |
-| `IndexedDB['dsh-mini-skin'].images` | 本地图片本体，键为 `canvas:dark` / `canvas:light` / `sidebar:dark` / `sidebar:light` |
+| `IndexedDB['dsh-mini-skin'].images` | 本地图片本体，键为**图片槽位** `区域:模式:状态`（`canvas:dark:idle` … `character:light:work`）；读出来的 blob URL 按槽位惰性缓存，卸载时只回收缓存里实际存在的那些 |
 | `<DSH_HOME>/mini-skins/*.json` | 皮肤库 |
 
 迁移：v1（扁平、无模式概念）会**同时写进两套预设**；更早的 `dsh-mini-skin:art-opacity` 单键也会被读取（**先判键存在**——`Number(null)` 是 0，曾经因此让全新安装的默认不透明度变成 0）。
@@ -185,6 +193,9 @@ node dev/verify-chain4.mjs
 4. 外层脚本 `const IMAGES` 在 HMR 重复求值时抛 `already been declared` -> 整份插件失效（改为可重复求值的 `window.__dshMiniSkinArt` 赋值）
 5. 受控 `<select>` 的当前值不在选项里 -> 显示第一项（"不要背景图"），再选它因"值没变"不触发
 6. 面板用 `inject` 捕获的**对象快照**初始化 -> 重新挂载后显示旧值（改为向插件取当前值）
+7. **面板改任何值都会被"重新读皮肤包"覆盖回去**（过 0.几秒回退成当前皮肤的原配置）。根因：改值走的是 `reapply()`，而它为了"磁盘上更新过的包点了也能生效"会重新读包、**把读回来的旧配置写回 settings 并落盘**。修法：改值只走纯套用的 `preview()`（不落盘、不读包），`reapply()` 也改成只影响页面、绝不写回设置
+8. 工作状态误判：只用 `[data-state='running']` + composer `data-phase` 时，**执行工具 / 纯深度思考**会被判成空闲（那两个相位在这两种时刻都不成立）。改为以会话级的 `[data-chat-running]` 为首选判据
+9. `fileUrls` 只预置了四个旧的两段键（`canvas:dark`…），而读写都用三段键（`canvas:dark:idle`）—— 对象上根本没有那些键，读到的是 `undefined`：行内出现 `url("undefined")` 让图不显示，`undefined !== null` 又让卸载时 `revokeObjectURL(undefined)` 抛异常、把整段清理中断。改为 Map + 惰性读取（读到才缓存，读不到就是"没有这张图"）
 
 ---
 
