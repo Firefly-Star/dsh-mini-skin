@@ -30,6 +30,8 @@ node dev/embed-art.mjs                # 素材 -> base64 前缀
 |---|---:|---|
 | `new-factory.txt` | 55.0 KB | 工厂源码（唯一维护地）：样式表、生命周期、设置分区、皮肤库客户端。改这里，不要改 lib/client.js 里的工厂体。 |
 | `assemble.mjs` | 1.1 KB | 把 new-factory.txt 拼到 lib/client.js 的图片前缀之后并写出 lib/client.js。 |
+| `dropdown-check.mjs` | 15.8 KB | 下拉点击语义的回归验证（不需要浏览器/React）：从 lib/client.js 抠出**真实的** `Select`，套一层最小 React+DOM 假件跑，验"点当前项也回调"、菜单开关、方向与高度。`node dev/dropdown-check.mjs`。 |
+| `reapply-guard-check.mjs` | 4.7 KB | "用户自己挑的图不会被皮肤包覆盖"的回归验证：抠出真实的 `LOCAL_CHOICE_AT` / `userPickedSlots`，验 12 个槽位与设置字段的对应，以及文件名缺失、脏数据等边界。`node dev/reapply-guard-check.mjs`。 |
 | `embed-art.mjs` | 1.6 KB | 从原始素材重新生成图片前缀（5 张图 -> base64 data URI）。 |
 | `shrink-maid.py` | 1.1 KB | 立绘的降采样与重编码（Pillow），生成内嵌用的 WebP。 |
 | `verify-chain2.mjs` | 9.9 KB | 探针验证：插件装载、背景层绘制、设置分区渲染、控制台异常。 |
@@ -119,4 +121,6 @@ dev/anim/check-anim.py           校验：帧数 / 时长 / 是否真是动画
 - 检测：首选会话级 `[data-chat-running]`（整轮在跑：思考 / 流式 / 执行工具 / 压缩都在），兜底才是 `[data-state=running]` 与 `[data-composer-input][data-phase]`（后者只有 submitting/adjudicating 两个瞬时相位，工具执行与纯思考时都不成立 —— 只用兜底的那版把它们误判成空闲）。刻意不用 MutationObserver（原皮肤用了整个 body 的观察器）。
 - 动图闭环：循环接缝必须落在小变化上。曾用 [0,0,1,2,3,2,1,0]（首末同帧）导致接缝处帧 0 连播 720ms，肉眼可见地静止一下；改成回文式 [0,1,2,3,2,1] 后接缝像素差 4.19（与内部帧间同量级）。dev/anim/build-seamless-idle.py 会把接缝差异打印出来。
 - 官方皮肤 = 库里的 `official.json`（不再有代码内的 `builtin` 状态）。节点半边在**每次读列表**时保证这份包存在；客户端按文件名引用它，所以入库时官方包被强制落到 `official.json`。
-- 副作用：皮肤包已选中时受控下拉的同值不触发 onChange，所以换包后需要「官方皮肤 → 再选回」，或点「重新应用」按钮。
+- **下拉不用原生 `<select>`**：受控 select 在"点中的就是当前项"时不派发 `change`，于是"本来就是从本地文件选的、想再选一次换张图""选回同一个皮肤包"这类操作完全没反应。现在面板自绘下拉（`SELECT_*` 样式 + `Select` 组件）：每一项都是按钮，**每次点击都回调**；菜单贴着视口底边会向上弹，高度按剩余空间收（`maxHeight` 必须是带单位的字符串，React 只给部分属性自动补 px）。
+- **关面板不能吃掉用户的改动**：面板卸载时会 `reapply()`。这条路径**只允许**把皮肤包里内嵌的本地图恢复到本机存储（`restorePackImages`），配置一律用内存里那份；以前它会 `applySettings(包里推导出来的设置)`，于是"在皮肤包基础上改了顶部图/不透明度，一关设置面板就变回皮肤自带的样子"（同一个坑以前在 `preview` 那条路径上修过一次）。启动时的 `hydrateFromLibrary` 同理：`activeSkin.hash` 与当前指纹不符（= 用户改过）就不再按包重置配置。
+- 想回到皮肤原样：在「正在使用」里再选一次那个皮肤（或用「恢复默认」），不要指望「重新应用」。
