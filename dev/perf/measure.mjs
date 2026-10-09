@@ -60,6 +60,8 @@ const SKIN = String(arg("skin", "mini-skin"));
 const LABEL = String(arg("label", SKIN.replace(/[^\w.-]+/g, "_")));
 const RUNS = Number(process.env.PERF_RUNS ?? 3);
 const SETTLE_MS = Number(process.env.PERF_SETTLE_MS ?? 600);
+/** 侧栏/右栏有动画，采样窗口要盖住它，否则重算会落在窗口外。 */
+const COLLAPSE_SETTLE_MS = Number(process.env.PERF_COLLAPSE_MS ?? 1200);
 const OUT_DIR = resolve(process.env.PERF_OUT ?? join(HERE, "out"));
 const APP = process.env.DSH_PROBE_APP;
 const CDP = process.env.DSH_PROBE_CDP ?? "http://127.0.0.1:9335";
@@ -163,20 +165,29 @@ function pickStyleMetrics(snapshot) {
  * duration 口径：  ΔRecalcStyleDuration + ΔLayoutDuration
  * count-mean 口径： ΔCount × 该指标的"平均单次耗时"（= Duration/Count 的累计比）
  *   注意：count-mean 是**估算**，报告里会标注；两种口径的数字不要与其他报告的混用。
+ *
+ * 同时返回 `work`：这一轮到底有没有真的发生事情（DOM 节点数或样式重算的变化量）。
+ * 没有 work 的样本是**假样本** —— 比如点击没聚焦到编辑器、点了工作区行而不是切会话 ——
+ * 它们会拿到接近 0 的耗时，混进平均里会把结果压得好看但没有意义。
  */
 function operationCost(before, after, picked) {
+	const delta = (name) => (after[name] ?? 0) - (before[name] ?? 0);
+	const work = delta("Nodes") + delta("RecalcStyleCount") + delta("LayoutCount");
 	if (picked.mode === "duration") {
-		const style = (after[picked.keys.style] ?? 0) - (before[picked.keys.style] ?? 0);
-		const layout = (after[picked.keys.layout] ?? 0) - (before[picked.keys.layout] ?? 0);
-		return { ms: (style + layout) * 1000, style, layout, method: "duration" };
+		const style = delta(picked.keys.style);
+		const layout = delta(picked.keys.layout);
+		return { ms: (style + layout) * 1000, style, layout, method: "duration", work };
 	}
 	if (picked.mode === "count-mean") {
-		const styleCount = (after[picked.keys.style] ?? 0) - (before[picked.keys.style] ?? 0);
-		const layoutCount = (after[picked.keys.layout] ?? 0) - (before[picked.keys.layout] ?? 0);
-		return { ms: styleCount + layoutCount, style: styleCount, layout: layoutCount, method: "count-mean", unit: "count" };
+		const styleCount = delta(picked.keys.style);
+		const layoutCount = delta(picked.keys.layout);
+		return { ms: styleCount + layoutCount, style: styleCount, layout: layoutCount, method: "count-mean", unit: "count", work };
 	}
-	return { ms: 0, style: 0, layout: 0, method: "none" };
+	return { ms: 0, style: 0, layout: 0, method: "none", work };
 }
+
+/** 低于这个 work 量，就认为这一轮没真的发生操作，丢弃并重试。 */
+const MIN_WORK = 3;
 
 // ---------------------------------------------------------------- 四类操作
 
@@ -227,36 +238,75 @@ const OPERATIONS = {
 		await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
 		await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
 	},
-	/** 左栏收起再展开。 */
+	/** 左栏收起再展开。收放有动画（transition + 150ms 卸载延迟），所以每步等长一点，
+	 *  否则重算会落在采样窗口之外，被误判成"没发生操作"。 */
 	sidebar: async ({ evaluate, send }) => {
 		const box = await rectOf(evaluate, SELECTOR.sidebarToggle);
 		await clickAt(send, box.x, box.y);
-		await sleep(SETTLE_MS);
+		await sleep(COLLAPSE_SETTLE_MS);
 		const again = await rectOf(evaluate, SELECTOR.sidebarToggle);
 		await clickAt(send, again.x, again.y);
+		await sleep(COLLAPSE_SETTLE_MS);
 	},
-	/** 会话 A → B → A（用侧栏工作区树里的行）。 */
+	/** 会话 A → B → A（点**非当前**会话的叶子行，并验证会话区真的换了）。 */
 	session: async ({ evaluate, send }) => {
-		const rows = await evaluate(`(() => {
-			const list = [...document.querySelectorAll(${JSON.stringify(SELECTOR.sessionRows)})]
-				.filter((el) => el.getBoundingClientRect().height > 8);
-			if (list.length < 2) return null;
-			return list.slice(0, 2).map((el) => { el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+		// 侧栏必须是展开的，否则树不可见（会话行会查不到）。
+		const expanded = await evaluate(`document.querySelector("[aria-label='收起侧边栏'], [aria-label='Collapse sidebar']") !== null`);
+		if (expanded !== true) {
+			const box = await rectOf(evaluate, SELECTOR.sidebarToggle);
+			await clickAt(send, box.x, box.y);
+			await sleep(COLLAPSE_SETTLE_MS);
+		}
+		const readActive = () => evaluate(`(() => {
+			const active = document.querySelector("[data-slot='sidebar.workspaces'] [aria-current], [data-slot='sidebar.workspaces'] [aria-selected='true']");
+			const header = document.querySelector("[data-slot='conversation.header']");
+			return (active === null ? "" : (active.textContent || "").trim().slice(0, 30)) + " | " + (header === null ? "" : (header.textContent || "").trim().slice(0, 40));
 		})()`);
-		if (rows === null) throw new Error("侧栏工作区树里找不到两个可点的行（会话太少？）");
-		await clickAt(send, rows[0].x, rows[0].y);
-		await sleep(SETTLE_MS);
-		await clickAt(send, rows[1].x, rows[1].y);
-		await sleep(SETTLE_MS);
-		await clickAt(send, rows[0].x, rows[0].y);
+		// 只点"不是当前选中"的叶子会话行（否则点了等于没点）。
+		const target = await evaluate(`(() => {
+			const list = [...document.querySelectorAll(${JSON.stringify(SELECTOR.sessionRows)})]
+				.filter((el) => el.getAttribute("aria-expanded") === null
+					&& el.getAttribute("aria-current") === null
+					&& el.getAttribute("aria-selected") !== "true"
+					&& el.getBoundingClientRect().height > 8);
+			const pick = list[0];
+			if (pick === undefined) return null;
+			pick.scrollIntoView({ block: "center" });
+			const r = pick.getBoundingClientRect();
+			return { x: r.x + r.width / 2, y: r.y + r.height / 2, label: (pick.textContent || "").trim().slice(0, 20) };
+		})()`);
+		if (target === null) throw new Error("侧栏展开后找不到「非当前」的会话行");
+		const start = await readActive();
+		await clickAt(send, target.x, target.y);
+		await sleep(COLLAPSE_SETTLE_MS);
+		const switched = await readActive();
+		if (switched === start) throw new Error("点了会话行但会话区没换 —— 这一轮无效，不记数");
+		// 回到原来那个（再用一次同样的判据确认真的回去了）
+		const back = await evaluate(`(() => {
+			const list = [...document.querySelectorAll(${JSON.stringify(SELECTOR.sessionRows)})]
+				.filter((el) => el.getAttribute("aria-expanded") === null
+					&& el.getAttribute("aria-current") === null
+					&& el.getAttribute("aria-selected") !== "true"
+					&& el.getBoundingClientRect().height > 8);
+			const pick = list[0];
+			if (pick === undefined) return null;
+			pick.scrollIntoView({ block: "center" });
+			const r = pick.getBoundingClientRect();
+			return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+		})()`);
+		if (back !== null) {
+			await clickAt(send, back.x, back.y);
+			await sleep(COLLAPSE_SETTLE_MS);
+		}
 	},
-	/** 右栏展开再收起。 */
+	/** 右栏展开再收起。同样等动画走完。 */
 	rightbar: async ({ evaluate, send }) => {
 		const box = await rectOf(evaluate, SELECTOR.rightbarExpand);
 		await clickAt(send, box.x, box.y);
-		await sleep(SETTLE_MS);
+		await sleep(COLLAPSE_SETTLE_MS);
 		const again = await rectOf(evaluate, SELECTOR.rightbarToggle);
 		await clickAt(send, again.x, again.y);
+		await sleep(COLLAPSE_SETTLE_MS);
 	},
 };
 
@@ -429,6 +479,22 @@ async function main() {
 		process.exit(3);
 	}
 
+	// 前置校验：页面必须真的在渲染。
+	// Chrome 会在窗口被切到后台/最小化/遮挡时节流渲染 —— 那时 RecalcStyleCount / LayoutCount /
+	// LayoutDuration 全都停在原地，测出来的"耗时"会接近 0，是**假数据**。宁可拒绝测量。
+	const renderCheck = await client.send("Performance.getMetrics");
+	const renderBefore = Object.fromEntries(renderCheck.metrics.map((m) => [m.name, m.value]));
+	await client.evaluate(`(() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:-9999px;width:10px;height:10px;'; d.textContent = 'render-probe'; document.body.appendChild(d); requestAnimationFrame(() => requestAnimationFrame(() => d.remove())); })()`);
+	await sleep(1200);
+	const renderAfter = Object.fromEntries((await client.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value]));
+	const moved = (name) => (renderAfter[name] ?? 0) - (renderBefore[name] ?? 0);
+	if (moved("RecalcStyleCount") === 0 && moved("LayoutCount") === 0) {
+		console.error("页面没有在渲染（RecalcStyleCount 与 LayoutCount 在 1.2 秒内都没动）。");
+		console.error("→ 最常见的原因是这个 Chrome 窗口被切到后台/最小化/被遮挡，Chrome 节流了渲染。");
+		console.error("→ 请把那个 Chrome 窗口置于前台并保持可见，然后重跑。此时测出来的数字会接近 0，是假数据。");
+		process.exit(4);
+	}
+
 	const first = await sample(client.send);
 	const picked = pickStyleMetrics(first);
 	console.log(`指标口径：${picked.mode}${picked.mode === "count-mean" ? "（估算，见脚本顶部说明）" : ""}`);
@@ -449,25 +515,38 @@ async function main() {
 			continue;
 		}
 		const run = OPERATIONS[name];
-		console.log(`operation ${name}：预热 1 次 + 正式 ${RUNS} 次`);
+		console.log(`operation ${name}：预热 1 次 + 正式 ${RUNS} 轮（无效轮丢弃）`);
 		try {
 			await run(client);                                  // 预热，不记
 			await sleep(SETTLE_MS);
 			const samples = [];
-			for (let i = 0; i < RUNS; i += 1) {
+			const invalid = [];
+			let attempts = 0;
+			while (samples.length < RUNS && attempts < RUNS * 3) {
+				attempts += 1;
 				const ok = await client.evaluate(probe).catch(() => false);
-				if (ok !== true) { console.log(`  第 ${i + 1} 轮皮肤未生效，丢弃`); continue; }
+				if (ok !== true) { console.log(`  第 ${attempts} 次：皮肤未生效，丢弃`); continue; }
 				const before = await sample(client.send);
 				await run(client);
 				const after = await sample(client.send);
 				const cost = operationCost(before, after, picked);
+				if (cost.work < MIN_WORK) {
+					invalid.push(cost.work);
+					console.log(`  第 ${attempts} 次：work=${cost.work} 太小，判定没真的发生操作，丢弃`);
+					await sleep(SETTLE_MS);
+					continue;
+				}
 				samples.push(cost.ms);
-				console.log(`  第 ${i + 1} 轮：${cost.method === "duration" ? cost.ms.toFixed(2) + " ms" : cost.ms + " 次重算"}`);
+				console.log(`  第 ${attempts} 次：${cost.method === "duration" ? cost.ms.toFixed(2) + " ms" : cost.ms + " 次重算"}（work=${cost.work}）`);
 				await sleep(SETTLE_MS);
 			}
+			const sorted = [...samples].sort((a, b) => a - b);
 			results.operations[name] = {
 				samples,
 				average: samples.length === 0 ? null : Number((samples.reduce((a, b) => a + b, 0) / samples.length).toFixed(2)),
+				median: sorted.length === 0 ? null : Number(sorted[Math.floor(sorted.length / 2)].toFixed(2)),
+				max: sorted.length === 0 ? null : Number(sorted[sorted.length - 1].toFixed(2)),
+				invalidRounds: invalid.length,
 				method: picked.mode,
 			};
 		} catch (error) {
@@ -481,9 +560,10 @@ async function main() {
 	const file = join(OUT_DIR, `${LABEL}.json`);
 	writeFileSync(file, JSON.stringify(results, null, 1), "utf8");
 
-	console.log("\n=== 汇总（ms/轮 或 次重算/轮，口径见上）===");
+	console.log("\n=== 汇总（ms/轮，duration 口径）===");
 	for (const [name, value] of Object.entries(results.operations)) {
-		console.log(`  ${name.padEnd(9)} ${value.error !== undefined ? "跳过：" + value.error : value.average}`);
+		if (value.error !== undefined) { console.log(`  ${name.padEnd(9)} 跳过：${value.error}`); continue; }
+		console.log(`  ${name.padEnd(9)} 平均 ${value.average}  中位 ${value.median}  最大 ${value.max}  样本 [${value.samples.join(", ")}]  丢弃 ${value.invalidRounds}`);
 	}
 	for (const [name, value] of Object.entries(results.extras)) {
 		console.log(`  ${name.padEnd(9)} 帧 ${value.frames}，中位 ${value.median}ms，p95 ${value.p95}ms，最长 ${value.max}ms，>50ms 占 ${(value.longShare * 100).toFixed(1)}%`);
