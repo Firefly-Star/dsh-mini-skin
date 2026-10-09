@@ -91,3 +91,18 @@ node dev/perf/measure.mjs --skin mini-skin --scenario scroll,stream
 - **headless 是软件渲染**：GPU 合成 / 光栅化的差异全都会失真，性能数字必须用有窗口模式测。
 - **`rightbar` 可能跳过**：宿主没挂右栏时脚本会明确打印"跳过"，不会拿空样本充数。
 - **一条命令只测一套皮肤**：四类操作共享"当前激活皮肤"这个状态，必须串行、不可并行。
+- **窗口必须在渲染**：脚本开测前会自检，被节流就直接拒绝（见上）。窗口切到后台跑出来的数字和截图都不可信。
+
+## 截图（`capture-shots.mjs`）
+
+自动截取两套皮肤的多状态图 + 设置面板图，供文章使用：
+
+```powershell
+node dev/perf/build-image-hashes.mjs          # 先生成哈希对照表（已 gitignore）
+node dev/perf/capture-shots.mjs [输出目录]     # 默认 docs/zhihu-screenshots/
+```
+
+- 切换是程序化的，但走受控组件的真实事件路径：皮肤 = 面板第 0 个 select，
+  主题+预览状态 = 第 1 个 select（它内部调用宿主的 `theme.setTheme()`，所以四态能在一个会话里截全）。
+- 每张截图前后都会打印**当前皮肤与主题的识别结果**（图片内容哈希查表），避免张冠李戴。
+- 同样带渲染自检：窗口被节流时拒绝工作。
