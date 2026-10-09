@@ -1,4 +1,4 @@
-"""生成「深海女仆工坊」mini-skin 皮肤包（自包含：合成场景以 base64 内嵌）。
+"""生成「深海女仆」mini-skin 皮肤包（自包含：合成场景以 base64 内嵌）。
 
 四套预设都用同一张合成场景（宫殿 + 双女仆），只有亮/暗两张图不同 —— 原皮肤是
 "主题切换换宫殿"，没有工作/空闲之分，所以这里 idle 与 work 给同一张，
@@ -15,7 +15,7 @@
 """
 import base64, io, json, os, datetime
 
-# 本脚本所在目录 = 产物目录（仓库里就是 skins/maid-atelier/）。
+# 本脚本所在目录 = 产物目录（仓库里就是 skins/深海女仆/）。
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 素材来自隔壁的 dsh-deep-whale 仓库（本仓库不分发这些原图）。
 # 默认按 "<仓库根>/../dsh-deep-whale/maid-atelier/assets" 解析；换机器时用
@@ -37,7 +37,7 @@ def _assets_dir():
 
 SRC = _assets_dir()
 CHIBI = os.path.join(SRC, "runtime", "405917afdb68d725624bbf7e4f1619a35fc4004039b7d553c5528ca5f65308d3.webp")
-NAME = "深海女仆工坊"
+NAME = "深海女仆"
 OPACITY = 78
 # 原皮肤渲染出来的 Q 版尺寸：宽 230px、高约 205px（620x553 的素材等比缩到 230 宽）。
 CHIBI_HEIGHT = 205
@@ -84,7 +84,7 @@ chibi = data_url(CHIBI)
 pack = {
     "format": "dsh-mini-skin-pack",
     "version": 3,
-    "name": "maid-atelier",
+    "name": NAME,
     # savedAt 是唯一的"每跑一次就变"的字段。要可复现的产物就设 MAID_SAVED_AT
     # （例如把它固定成仓库里那份的值），否则取当前时间。
     "savedAt": os.environ.get("MAID_SAVED_AT") or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
@@ -114,7 +114,7 @@ pack = {
     },
 }
 
-out = os.path.join(HERE, "maid-atelier.json")
+out = os.path.join(HERE, "深海女仆.json")
 with open(out, "w", encoding="utf-8") as fh:
     json.dump(pack, fh, ensure_ascii=False)
 print(f"pack: {out}  {round(os.path.getsize(out) / 1024)} KB")

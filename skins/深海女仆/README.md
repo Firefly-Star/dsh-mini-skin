@@ -1,4 +1,4 @@
-# 用 mini-skin 框架还原 maid-atelier（深海女仆工坊）
+# 用 mini-skin 框架还原 maid-atelier（深海女仆）
 
 按 `dsh-deep-whale/maid-atelier` 的源码与其 `preview/` 复刻的**最小可用还原**。
 本目录在插件仓库里的位置是 `mini-skin/skins/maid-atelier/`。
@@ -7,16 +7,16 @@
 
 | 文件 | 说明 |
 |---|---|
-| `build-maid-scene.py` | 把宫殿 + 左女仆 + 右女仆合成为一张画布背景（亮/暗各一张） |
-| `build-maid-pack.py` | 生成自包含皮肤包（图片 base64 内嵌），并做 Q 版素材的等比处理 |
+| `build-deep-sea-maid-scene.py` | 把宫殿 + 左女仆 + 右女仆合成为一张画布背景（亮/暗各一张） |
+| `build-deep-sea-maid-pack.py` | 生成自包含皮肤包（图片 base64 内嵌），并做 Q 版素材的等比处理 |
 | `scene-dark.webp` / `scene-light.webp` | 合成后的 1920×1080 场景图（各约 270 KB） |
-| `maid-atelier.json` | 皮肤包（1.8 MB，8 个图片槽位内嵌）—— 复制到 `<DSH_HOME>/mini-skins/` 即可用 |
+| `深海女仆.json` | 皮肤包（1.8 MB，8 个图片槽位内嵌）—— 复制到 `<DSH_HOME>/mini-skins/` 即可用 |
 
 素材来自 `dsh-deep-whale/maid-atelier/assets/`（CC BY-NC-SA 4.0，署名链见本仓库
 `artwork/NOTICE-maid-atelier` 与 `artwork/LICENSE-ARTWORK`；**本目录不含那些原始美术文件**，只由脚本引用）。
 
-**怎么装**：把 `maid-atelier.json` 放进 `<DSH_HOME>/mini-skins/`（或直接用「导入皮肤包」），
-然后在 设置 → 自定义皮肤 → 正在使用 里选「深海女仆工坊」。
+**怎么装**：把 `深海女仆.json` 放进 `<DSH_HOME>/mini-skins/`（或直接用「导入皮肤包」），
+然后在 设置 → 自定义皮肤 → 正在使用 里选「深海女仆」。
 
 > 皮肤包换过版本（女仆位置与侧栏 Q 版都改过）。**重选一次皮肤**（或在面板里点「重新应用」）
 > 才会把新的图写回本机存储；只刷新页面不会更新已导入的图片。
@@ -97,8 +97,8 @@ mini-skin 只有三件事可用：**注入一张样式表**、**在 `body` 上�
 ### 怎么复现合成
 
 ```powershell
-python maid-skin\build-maid-scene.py   # 宫殿 + 双女仆 -> scene-{dark,light}.webp
-python maid-skin\build-maid-pack.py    # -> maid-atelier.json（自包含，2.0 MB）
+python build-deep-sea-maid-scene.py   # 宫殿 + 双女仆 -> scene-{dark,light}.webp
+python build-deep-sea-maid-pack.py    # -> 深海女仆.json（自包含，1.8 MB）
 ```
 
 坐标全部来自原 CSS，改了原皮肤的 `height: 96%/92%` 或边缘内缩就要重跑。
@@ -152,7 +152,7 @@ python maid-skin\build-maid-pack.py    # -> maid-atelier.json（自包含，2.0 
    > 这次没走这条路，因为**它把皮肤的目标变成运行时依赖**：女仆皮肤一旦停用，我们的背景就空了。
 2. **署名必须跟着走。** 这些美术是 CC BY-NC-SA 4.0（非商业）。本次没有把美术文件复制进本目录，
    只由脚本引用原目录 —— 上报或分发时请一并带上 `maid-atelier/NOTICE` 与 `LICENSE-ARTWORK`；
-   若把 `maid-atelier.json`（内嵌位图）单独发出去，那就是在分发改编作品，署名链与许可必须随包。
+   若把 `深海女仆.json`（内嵌位图）单独发出去，那就是在分发改编作品，署名链与许可必须随包。
 3. **`maid-right-vision-v1.webp`（1.8 MB，戴眼镜版）与 `maid-right-v6`（508 KB）本次完全没用上** ——
    前者要靠模型感知才能触发，后者是更低清的旧版。
 
