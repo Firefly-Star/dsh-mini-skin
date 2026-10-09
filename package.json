@@ -1,6 +1,6 @@
 {
   "name": "dsh-mini-skin",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Stylesheet-only DSH skin: background art, palette tokens, square UI contract, fonts - all in one settings section. No observers, no DOM surgery.",
   "type": "module",
   "main": "lib/index.js",
