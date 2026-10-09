@@ -38,6 +38,30 @@ const probe = {
 };
 for (const [name, expr] of Object.entries(probe)) console.log(`  ${name.padEnd(28)} ${await evaluate(expr)}`);
 
+// 是哪一套皮肤：把 body 上那两个行内图片变量取出来，算 data URI 的内容哈希，查对照表。
+// 对照表由 build-image-hashes.mjs 从 skins/ 下的包生成。
+let hashTable = {};
+try {
+	const { readFileSync } = await import("node:fs");
+	const { dirname, join } = await import("node:path");
+	const { fileURLToPath } = await import("node:url");
+	hashTable = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "image-hashes.json"), "utf8"));
+} catch {
+	console.log('  （没有 image-hashes.json，先跑 node dev/perf/build-image-hashes.mjs）');
+}
+const hashOf = (customProperty) => evaluate(`(async () => {
+  const raw = getComputedStyle(document.body).getPropertyValue(${JSON.stringify(customProperty)}).trim();
+  const url = raw.replace(/^url\\(["']?/, '').replace(/["']?\\)$/, '');
+  if (url === '') return null;
+  const buffer = await (await fetch(url)).arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return [...new Uint8Array(digest)].slice(0, 4).map((b) => b.toString(16).padStart(2, '0')).join('');
+})()`);
+for (const [label, prop] of [["画布图", "--dsh-mini-skin-canvas-file"], ["角色图", "--dsh-mini-skin-character-art"]]) {
+	const hash = await hashOf(prop);
+	console.log(`  ${label}哈希`.padEnd(14), hash ?? "(无)", hash !== null && hashTable[hash] !== undefined ? `→ ${hashTable[hash]}` : "");
+}
+
 const els = {
   '输入框 [data-composer-input]': "[data-composer-input]",
   '输入卡 [data-composer-card]': "[data-composer-card]",

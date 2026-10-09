@@ -3,3 +3,4 @@
 .npm-cache/
 
 dev/perf/out/
+dev/perf/image-hashes.json
