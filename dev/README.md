@@ -32,6 +32,8 @@ node dev/embed-art.mjs                # 素材 -> base64 前缀
 | `assemble.mjs` | 1.1 KB | 把 new-factory.txt 拼到 lib/client.js 的图片前缀之后并写出 lib/client.js。 |
 | `dropdown-check.mjs` | 15.8 KB | 下拉点击语义的回归验证（不需要浏览器/React）：从 lib/client.js 抠出**真实的** `Select`，套一层最小 React+DOM 假件跑，验"点当前项也回调"、菜单开关、方向与高度。`node dev/dropdown-check.mjs`。 |
 | `reapply-guard-check.mjs` | 4.7 KB | "用户自己挑的图不会被皮肤包覆盖"的回归验证：抠出真实的 `LOCAL_CHOICE_AT` / `userPickedSlots`，验 12 个槽位与设置字段的对应，以及文件名缺失、脏数据等边界。`node dev/reapply-guard-check.mjs`。 |
+| `caret-check.mjs` | — | 光标（\|）那一层的不变量：抠出真实的常量 / `clamp` / `buildSettings` / 光标运行时，套假 DOM 验定位、夹紧、颜色校验、监听清理与样式规则。**重点是"算不出位置时不许把原生光标藏起来"**（否则用户就没光标了）。`node dev/caret-check.mjs`。 |
+| `caret-into-packs.mjs` | — | 把光标五个键补进**手维护的**皮肤包（`skins/*.json`，或 `--dir <皮肤库目录>`）。文本级插入、逐键校验：不整包重排（`深海女仆.json` 是 1.8 MB 单行 + base64），也不覆盖已经手写过的值。 |
 | `embed-art.mjs` | 1.6 KB | 从原始素材重新生成图片前缀（5 张图 -> base64 data URI）。 |
 | `shrink-maid.py` | 1.1 KB | 立绘的降采样与重编码（Pillow），生成内嵌用的 WebP。 |
 | `verify-chain2.mjs` | 9.9 KB | 探针验证：插件装载、背景层绘制、设置分区渲染、控制台异常。 |

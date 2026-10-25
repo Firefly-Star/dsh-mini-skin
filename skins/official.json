@@ -1,7 +1,7 @@
 {
  "format": "dsh-mini-skin-pack",
  "version": 3,
- "name": "official",
+ "name": "官方皮肤（宿主原样）",
  "savedAt": "2026-10-09T00:00:00.000Z",
  "shared": {
   "square": true,
@@ -25,7 +25,12 @@
    "sidebarOffsetY": 0,
    "characterImage": "none",
    "characterFileName": "",
-   "characterHeight": 0
+   "characterHeight": 0,
+   "caretFollowAccent": true,
+   "caretColor": "#ffd166",
+   "caretWidth": 1,
+   "caretGlow": 0,
+   "caretBlink": true
   },
   "dark:work": {
    "canvasImage": "dark-active",
@@ -40,7 +45,12 @@
    "sidebarOffsetY": 0,
    "characterImage": "none",
    "characterFileName": "",
-   "characterHeight": 0
+   "characterHeight": 0,
+   "caretFollowAccent": true,
+   "caretColor": "#ffd166",
+   "caretWidth": 1,
+   "caretGlow": 0,
+   "caretBlink": true
   },
   "light:idle": {
    "canvasImage": "light-hero",
@@ -55,7 +65,12 @@
    "sidebarOffsetY": 0,
    "characterImage": "none",
    "characterFileName": "",
-   "characterHeight": 0
+   "characterHeight": 0,
+   "caretFollowAccent": true,
+   "caretColor": "#ffd166",
+   "caretWidth": 1,
+   "caretGlow": 0,
+   "caretBlink": true
   },
   "light:work": {
    "canvasImage": "light-active",
@@ -70,7 +85,12 @@
    "sidebarOffsetY": 0,
    "characterImage": "none",
    "characterFileName": "",
-   "characterHeight": 0
+   "characterHeight": 0,
+   "caretFollowAccent": true,
+   "caretColor": "#ffd166",
+   "caretWidth": 1,
+   "caretGlow": 0,
+   "caretBlink": true
   }
  },
  "images": {}

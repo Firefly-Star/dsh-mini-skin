@@ -81,6 +81,33 @@ dsh plugin --profile web add '<绝对路径>\dsh-mini-skin-0.3.0.tgz'
 - **品牌字标**：`DSH` 方框字标 / 宿主原样
 - **LINK ACTIVE 标签**开关
 
+### 光标（|）
+
+宿主输入框（Lexical 富文本）的光标颜色原本跟着强调色走：`caret-color: var(--dsw-alias-state-business-primary)`。强调色偏暗时（比如深色皮肤里的 `#086cff`），这个 1px 的光标几乎看不见。面板里的「光标」分组就是为这件事：
+
+```
+光标
+  跟随强调色   [x]          -> 取消后可自己选颜色
+  颜色         ■ #ffd166
+  粗细         ----o----  [3] px   1 = 原生，2 以上改自绘
+  发光         ----o----  [8] px   0 = 无
+  闪烁         [ ]                 关掉后常亮
+  快速预设     [原生] [亮黄·粗] [纯白·粗] [荧光绿]
+  同步到其它预设 [同步本主题两态] [同步全部四套]
+```
+
+**光标属于预设**：五个键存在每一套「主题 × 状态」里，跟着面板上「正在编辑」走——深色调粗不会顺带改到浅色，空闲和工作也可以各调各的。皮肤包的 `modes` 里自然带上它们，所以"深色亮黄粗、浅色深蓝细"可以随包分发。
+
+- 「同步本主题两态」= 只抄给同一主题的空闲/工作（`dark:idle` ↔ `dark:work`），**绝不会动另一套主题**；「同步全部四套」才覆盖深浅两边。
+- **1px + 无发光 = 原生光标**：只改 `caret-color`，最稳（输入法、页面缩放、字体回退都不受影响）。默认就是这样，所以不碰设置时行为与旧版一致。
+- **2px 以上或开了发光 = 自绘**：把一个 `fixed` 定位的细条压在选区矩形上，原生光标设成透明。细条只在会话输入框（`[data-composer-input]` 的 contenteditable）里画，拖选 / 失焦 / 滚出视口时立刻撤下。
+- **不会出现"没有光标"**：`body[data-mini-caret]`（隐藏原生光标的那条规则）只由定位函数在细条画出来之后才加上；算不出位置就撤掉属性，退回原生光标。
+- **空输入框也有光标，而且和打字时一样长**：Chrome 对"只有一个 `<br>` 的空段落"常给一个**全零**矩形。这时按"行盒里居中的**字体内容盒**"还原：高度取 canvas 字体度量（`fontBoundingBoxAscent + Descent`，14px 下是 19px），**不用 `line-height`**（24px）——用了就会"空框的光标比有字时长一截"。左右取编辑框的内容原点（`padding` + 边框）。这两个坑都真踩过：细条被画到视口左上角（表现是完全没光标）、以及空框光标比有字长。
+- 颜色只接受 `#rrggbb`（取色器写的就是这个格式）。
+- **以皮肤文件为准**：`skins/` 里的三个包和 `<DSH_HOME>/mini-skins/*.json` 现在都带这五个键，可以直接手改 —— 改完在「正在使用」里重选一次该皮肤即生效（启动时也会按包重读，前提是你没在面板里改过设置：改过就以面板那份为准，这是"别拿包覆盖你的改动"的保护）。
+- 「跟随强调色」这条路径本来就随主题解析，所以深/浅两套的默认光标颜色本来就不一样；想要"深色更刺眼"再单独给深色那套选色。
+- 调参捷径：控制台里 `__dshMiniSkinCaret({ caretWidth: 4, caretGlow: 12, caretColor: "#ffeb3b", caretFollowAccent: false })` 立即生效并持久化（默认铺到四套预设；第二个参数只改一套，如 `__dshMiniSkinCaret({ caretWidth: 4 }, "dark:work")`）；`__dshMiniSkinCaret()` 看当前这套的值。比每次开关设置面板快得多。
+
 ---
 
 ## 皮肤库（插件自己的目录）
@@ -112,10 +139,10 @@ DELETE ?file=<名字>   -> 删除
   "savedAt": "2026-...",
   "shared": { "square": true, "brandMark": "dsh", "linkChip": true, "uiFont": "system", "sidebarFont": "inherit", "packName": "我的皮肤" },
   "modes": {
-    "dark:idle":  { "canvasImage": "dark-hero", "canvasOpacity": 90, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 },
-    "dark:work":  { "canvasImage": "dark-active", "canvasOpacity": 90, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 },
-    "light:idle": { "canvasImage": "light-hero", "canvasOpacity": 65, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 },
-    "light:work": { "canvasImage": "light-active", "canvasOpacity": 65, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0 }
+    "dark:idle":  { "canvasImage": "dark-hero", "canvasOpacity": 90, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0, "caretFollowAccent": false, "caretColor": "#ffd166", "caretWidth": 3, "caretGlow": 8, "caretBlink": false },
+    "dark:work":  { "canvasImage": "dark-active", "canvasOpacity": 90, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0, "caretFollowAccent": false, "caretColor": "#ffd166", "caretWidth": 3, "caretGlow": 8, "caretBlink": false },
+    "light:idle": { "canvasImage": "light-hero", "canvasOpacity": 65, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0, "caretFollowAccent": true, "caretColor": "#086cff", "caretWidth": 1, "caretGlow": 0, "caretBlink": true },
+    "light:work": { "canvasImage": "light-active", "canvasOpacity": 65, "sidebarImage": "maid-left", "sidebarOpacity": 100, "sidebarOffsetX": 0, "sidebarOffsetY": 0, "caretFollowAccent": true, "caretColor": "#086cff", "caretWidth": 1, "caretGlow": 0, "caretBlink": true }
   },
   "images": { "sidebar:dark:idle": "data:image/webp;base64,..." }
 }
@@ -124,6 +151,8 @@ DELETE ?file=<名字>   -> 删除
 - 四套预设键：`dark:idle` / `dark:work` / `light:idle` / `light:work`；v2 的 `dark` / `light` 仍能导入（映射到该主题的两套）。
 - **内置素材按名字引用**（`dark-hero` / `light-hero` / `maid-left` ...），不重复打包 -> 纯内置配置的包只有几 KB（`skins/official.json` 1.7 KB 就是这么来的）。
 - **本地图片的字节内嵌**进 `images`（键为 `区域:模式:状态`）-> 换台机器导入即用，**不需要原文件**。
+- **光标也写在 `modes` 里**，跟背景图同层：`caretFollowAccent` / `caretColor` / `caretWidth` / `caretGlow` / `caretBlink`。每套预设各一份 -> 一个包可以"深色亮黄粗、浅色细蓝"。写在 `shared` 里的光标键也认（铺给四套，作旧版兼容）。
+- 只带局部字段的包也能导入：缺的键各自吃默认值，不会因为少写几项就整包失效。
 - `activeSkin`（皮肤库身份）**不进包**：由导入方在导入后决定。
 - 因此"自包含"是结构上的保证：只涉及本地图片，没有跨域 / 失效链接的可能。
 
@@ -133,7 +162,7 @@ DELETE ?file=<名字>   -> 删除
 
 | 位置 | 内容 |
 |---|---|
-| `localStorage['dsh-mini-skin:settings:v1']` | 设置 v2：`{ version, dark{10 项}, light{10 项}, square, brandMark, linkChip, uiFont, sidebarFont, packName, activeSkin }` |
+| `localStorage['dsh-mini-skin:settings:v1']` | 设置 v3：`{ version, dark:idle{18 项}, dark:work{…}, light:idle{…}, light:work{…}, square, brandMark, linkChip, uiFont, sidebarFont, packName, activeSkin }`（每套 18 项 = 13 项素材 + 5 项光标） |
 | `IndexedDB['dsh-mini-skin'].images` | 本地图片本体，键为**图片槽位** `区域:模式:状态`（`canvas:dark:idle` … `character:light:work`）；读出来的 blob URL 按槽位惰性缓存，卸载时只回收缓存里实际存在的那些 |
 | `<DSH_HOME>/mini-skins/*.json` | 皮肤库 |
 
@@ -156,6 +185,7 @@ DELETE ?file=<名字>   -> 删除
 | `skins/orca-link.json` | 虎鲸链路示例包（四态：深色 90% / 亮色 65% 主内容不透明度 + 8 张动图槽位） |
 | `skins/深海女仆.json` | **深海女仆**皮肤包：把 maid-atelier 的宫殿 + 双女仆合成成一张画布图 + Q 版小人（1.8 MB 自包含） |
 | `dev/anim/` | 动画管线（图集切片、质心对齐、皮肤包生成、接缝校验）：**产出落在 `$DSH_HOME/mini-skins`，不写回本仓库**，留作复现手段 |
+| `dev/caret-check.mjs` | 光标那一层的无浏览器回归：从 `lib/client.js` 抠出**真实**的常量 / `clamp` / `buildSettings` / 光标运行时，套一层假 DOM 跑（定位、退回原生光标、监听清理、样式规则） |
 | `dev/maid/` | 深海女仆皮肤的构建侧：两个脚本 + 两张合成中间图 + 一份"哪些还原得了 / 哪些还原不了"的分析 |
 
 ### 皮肤包（`skins/`）
@@ -191,7 +221,11 @@ python build-pack.py    # -> ..\..\skins\深海女仆.json
 ```powershell
 node dev/assemble.mjs          # 拼接（保留 412 KB 图片前缀 + 内嵌 5 张图）
 node --check mini-skin/lib/client.js   # 语法
+node dev/caret-check.mjs       # 光标那一层的不变量（不需要浏览器）
 ```
+
+`dev/` 下每个 `*-check.mjs` 都是同一套路数：**从产物里抠出真实代码**、套一层最小假件跑，
+不另抄一份实现；验证的是逻辑不变量，不是像素级观感。
 
 ### 验证（探针）
 

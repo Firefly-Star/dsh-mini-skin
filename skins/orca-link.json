@@ -24,6 +24,11 @@
    "sidebarOffsetX": 0,
    "sidebarOffsetY": 0,
    "characterHeight": 232,
+   "caretFollowAccent": true,
+   "caretColor": "#ffd166",
+   "caretWidth": 1,
+   "caretGlow": 0,
+   "caretBlink": true,
    "characterImage": "file",
    "characterFileName": "idle-seamless-gentle.webp"
   },
@@ -39,6 +44,11 @@
    "sidebarOffsetX": 0,
    "sidebarOffsetY": 0,
    "characterHeight": 232,
+   "caretFollowAccent": true,
+   "caretColor": "#ffd166",
+   "caretWidth": 1,
+   "caretGlow": 0,
+   "caretBlink": true,
    "characterImage": "file",
    "characterFileName": "working.webp"
   },
@@ -54,6 +64,11 @@
    "sidebarOffsetX": 0,
    "sidebarOffsetY": 0,
    "characterHeight": 232,
+   "caretFollowAccent": true,
+   "caretColor": "#ffd166",
+   "caretWidth": 1,
+   "caretGlow": 0,
+   "caretBlink": true,
    "characterImage": "file",
    "characterFileName": "idle-seamless-gentle.webp"
   },
@@ -69,6 +84,11 @@
    "sidebarOffsetX": 0,
    "sidebarOffsetY": 0,
    "characterHeight": 232,
+   "caretFollowAccent": true,
+   "caretColor": "#ffd166",
+   "caretWidth": 1,
+   "caretGlow": 0,
+   "caretBlink": true,
    "characterImage": "file",
    "characterFileName": "working.webp"
   }
