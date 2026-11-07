@@ -75,6 +75,7 @@ const makeDom = () => {
 	const makeElement = (tag) => {
 		const element = {
 			tagName: String(tag).toUpperCase(),
+			nodeType: 1,
 			id: "",
 			style: makeStyle(),
 			display: "none",
@@ -375,6 +376,74 @@ const setupCaret = ({ collapsed = true, insideComposer = true, rect = cardRect, 
 	// 554 + (24 - 19)/2 = 556.5
 	check("空框在 <p> 里：跟着行块居中", normalize(element.style.top) === "556.50px", element.style.top);
 	check("空框在 <p> 里：高度仍是内容盒", normalize(element.style.height) === "19.00px", element.style.height);
+}
+
+// Shift+Enter：软换行还在同一个 <p> 里，第二行是空的，Chrome 同样给全零矩形。
+// 曾经这里按**整个块**居中，而块已经是两行 —— 于是细条被画到两行交界处，
+// 也就是用户看到的"光标跑到输入框竖直中线的行首"。必须按光标所在的**行盒**定位。
+{
+	const { dom, api } = setupCaret({
+		rect: { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 },
+		editorFrame: { left: 300, top: 500, width: 800, height: 64, right: 1100, bottom: 564 },
+		style: { lineHeight: "24px", fontSize: "14px", fontFamily: "sans-serif", paddingLeft: "14px", paddingTop: "4px" },
+	});
+	const paragraph = dom.makeElement("p");
+	// 两行：554..578 是"abc<br>"那一行，578..602 是 Shift+Enter 之后那行空行。
+	paragraph.getBoundingClientRect = () => ({ left: 314, top: 554, width: 800, height: 48, right: 1114, bottom: 602 });
+	const editor = dom.document.body.children[0];
+	editor.appendChild(paragraph);
+	dom.window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, getRangeAt: () => ({ startContainer: paragraph, startOffset: 2, getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }) }) });
+	// "块首 → 光标"覆盖第一行（文字 + 软换行），最后一个行盒的底边就是新那行的顶边。
+	dom.document.createRange = () => ({ setStart() {}, setEnd() {}, getClientRects: () => [{ left: 314, top: 554, width: 120, height: 24, right: 434, bottom: 578 }] });
+	api.applyCaret({ caretWidth: 3 });
+	api.placeCaret();
+	const element = dom.document.getElementById(api.CARET_ID);
+	// 578 + (24 - 19)/2 = 580.5；按整个块居中的老算法给的是 554 + (48 - 19)/2 = 568.5。
+	check("Shift+Enter 空行：落在第二行行首，不是两行交界处", normalize(element.style.top) === "580.50px", element.style.top);
+	check("Shift+Enter 空行：高度仍是内容盒", normalize(element.style.height) === "19.00px", element.style.height);
+	check("Shift+Enter 空行：仍然有光标（不退回无光标）", dom.document.body.hasAttribute("data-mini-caret"));
+}
+
+{
+	// 光标在**块首**（换段后的空 <p>）：探测范围是空的，就该是第一行。
+	const { dom, api } = setupCaret({
+		rect: { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 },
+		editorFrame: { left: 300, top: 500, width: 800, height: 64, right: 1100, bottom: 564 },
+		style: { lineHeight: "24px", fontSize: "14px", fontFamily: "sans-serif", paddingLeft: "14px", paddingTop: "4px" },
+	});
+	const paragraph = dom.makeElement("p");
+	paragraph.getBoundingClientRect = () => ({ left: 314, top: 554, width: 800, height: 48, right: 1114, bottom: 602 });
+	dom.document.body.children[0].appendChild(paragraph);
+	dom.window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, getRangeAt: () => ({ startContainer: paragraph, startOffset: 0, getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }) }) });
+	dom.document.createRange = () => ({ setStart() {}, setEnd() {}, getClientRects: () => [] });
+	api.applyCaret({ caretWidth: 3 });
+	api.placeCaret();
+	const element = dom.document.getElementById(api.CARET_ID);
+	// 554 + (24 - 19)/2 = 556.5，不是块中点 568.5。
+	check("多行块的光标在块首：取第一行", normalize(element.style.top) === "556.50px", element.style.top);
+}
+
+{
+	// 光标在**最后一行行尾**（探测范围顶到块底）：光标就在那个行盒上，不能往下多跳一行。
+	const { dom, api } = setupCaret({
+		rect: { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 },
+		editorFrame: { left: 300, top: 500, width: 800, height: 88, right: 1100, bottom: 588 },
+		style: { lineHeight: "24px", fontSize: "14px", fontFamily: "sans-serif", paddingLeft: "14px", paddingTop: "4px" },
+	});
+	const paragraph = dom.makeElement("p");
+	paragraph.getBoundingClientRect = () => ({ left: 314, top: 554, width: 800, height: 72, right: 1114, bottom: 626 });
+	dom.document.body.children[0].appendChild(paragraph);
+	dom.window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, getRangeAt: () => ({ startContainer: paragraph, startOffset: 6, getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }) }) });
+	dom.document.createRange = () => ({ setStart() {}, setEnd() {}, getClientRects: () => [
+		{ left: 314, top: 554, width: 300, height: 24, right: 614, bottom: 578 },
+		{ left: 314, top: 578, width: 300, height: 24, right: 614, bottom: 602 },
+		{ left: 314, top: 602, width: 90, height: 24, right: 404, bottom: 626 },
+	] });
+	api.applyCaret({ caretWidth: 3 });
+	api.placeCaret();
+	const element = dom.document.getElementById(api.CARET_ID);
+	// 最后一行 602 + (24 - 19)/2 = 604.5。
+	check("光标在最后一行行尾：不往下多跳一行", normalize(element.style.top) === "604.50px", element.style.top);
 }
 
 {
