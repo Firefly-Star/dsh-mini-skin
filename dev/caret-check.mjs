@@ -80,6 +80,9 @@ const makeDom = () => {
 			style: makeStyle(),
 			display: "none",
 			children: [],
+			get childNodes() {
+				return this.children;
+			},
 			parentElement: null,
 			appendChild(child) {
 				this.children.push(child);
@@ -283,6 +286,17 @@ const setupCaret = ({ collapsed = true, insideComposer = true, rect = cardRect, 
 	return { dom, api };
 };
 
+/** 假的 Range 工厂：tail = "光标 → 块尾"量到的行盒，all = "整块内容"量到的行盒。 */
+const caretRanges = ({ tail = [], all = [] } = {}) => {
+	let mode = "tail";
+	return () => ({
+		setStart() { mode = "tail"; },
+		setEnd() { mode = "tail"; },
+		selectNodeContents() { mode = "all"; },
+		getClientRects: () => (mode === "all" ? all : tail),
+	});
+};
+
 {
 	const { dom, api } = setupCaret();
 	api.applyCaret({ caretFollowAccent: false, caretColor: "#ffd166", caretWidth: 3, caretGlow: 8, caretBlink: false });
@@ -393,13 +407,13 @@ const setupCaret = ({ collapsed = true, insideComposer = true, rect = cardRect, 
 	const editor = dom.document.body.children[0];
 	editor.appendChild(paragraph);
 	dom.window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, getRangeAt: () => ({ startContainer: paragraph, startOffset: 2, getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }) }) });
-	// "块首 → 光标"覆盖第一行（文字 + 软换行），最后一个行盒的底边就是新那行的顶边。
-	dom.document.createRange = () => ({ setStart() {}, setEnd() {}, getClientRects: () => [{ left: 314, top: 554, width: 120, height: 24, right: 434, bottom: 578 }] });
+	// "光标 → 块尾"覆盖的就是软换行后的那一行（Chrome 给那个 <br> 一个行盒）。
+	dom.document.createRange = caretRanges({ tail: [{ left: 314, top: 578, width: 0, height: 24, right: 314, bottom: 602 }] });
 	api.applyCaret({ caretWidth: 3 });
 	api.placeCaret();
 	const element = dom.document.getElementById(api.CARET_ID);
-	// 578 + (24 - 19)/2 = 580.5；按整个块居中的老算法给的是 554 + (48 - 19)/2 = 568.5。
-	check("Shift+Enter 空行：落在第二行行首，不是两行交界处", normalize(element.style.top) === "580.50px", element.style.top);
+	// 新那行的内容区顶边就是 578；按整个块居中的老算法给的是 554 + (48 - 19)/2 = 568.5。
+	check("Shift+Enter 空行：落在第二行行首，不是两行交界处", normalize(element.style.top) === "578.00px", element.style.top);
 	check("Shift+Enter 空行：高度仍是内容盒", normalize(element.style.height) === "19.00px", element.style.height);
 	check("Shift+Enter 空行：仍然有光标（不退回无光标）", dom.document.body.hasAttribute("data-mini-caret"));
 }
@@ -415,12 +429,13 @@ const setupCaret = ({ collapsed = true, insideComposer = true, rect = cardRect, 
 	paragraph.getBoundingClientRect = () => ({ left: 314, top: 554, width: 800, height: 48, right: 1114, bottom: 602 });
 	dom.document.body.children[0].appendChild(paragraph);
 	dom.window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, getRangeAt: () => ({ startContainer: paragraph, startOffset: 0, getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }) }) });
-	dom.document.createRange = () => ({ setStart() {}, setEnd() {}, getClientRects: () => [] });
+	// 光标在块首：整块都在"光标 → 块尾"里，第一个行盒就是第一行。
+	dom.document.createRange = caretRanges({ tail: [{ left: 314, top: 554, width: 800, height: 24, right: 1114, bottom: 578 }] });
 	api.applyCaret({ caretWidth: 3 });
 	api.placeCaret();
 	const element = dom.document.getElementById(api.CARET_ID);
-	// 554 + (24 - 19)/2 = 556.5，不是块中点 568.5。
-	check("多行块的光标在块首：取第一行", normalize(element.style.top) === "556.50px", element.style.top);
+	// 第一行内容区顶边 554，不是块中点 568.5。
+	check("多行块的光标在块首：取第一行", normalize(element.style.top) === "554.00px", element.style.top);
 }
 
 {
@@ -434,7 +449,8 @@ const setupCaret = ({ collapsed = true, insideComposer = true, rect = cardRect, 
 	paragraph.getBoundingClientRect = () => ({ left: 314, top: 554, width: 800, height: 72, right: 1114, bottom: 626 });
 	dom.document.body.children[0].appendChild(paragraph);
 	dom.window.getSelection = () => ({ rangeCount: 1, isCollapsed: true, getRangeAt: () => ({ startContainer: paragraph, startOffset: 6, getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }) }) });
-	dom.document.createRange = () => ({ setStart() {}, setEnd() {}, getClientRects: () => [
+	// 光标在块尾："光标 → 块尾"是空的，退回整块内容的最后一个行盒。
+	dom.document.createRange = caretRanges({ tail: [], all: [
 		{ left: 314, top: 554, width: 300, height: 24, right: 614, bottom: 578 },
 		{ left: 314, top: 578, width: 300, height: 24, right: 614, bottom: 602 },
 		{ left: 314, top: 602, width: 90, height: 24, right: 404, bottom: 626 },
@@ -442,8 +458,8 @@ const setupCaret = ({ collapsed = true, insideComposer = true, rect = cardRect, 
 	api.applyCaret({ caretWidth: 3 });
 	api.placeCaret();
 	const element = dom.document.getElementById(api.CARET_ID);
-	// 最后一行 602 + (24 - 19)/2 = 604.5。
-	check("光标在最后一行行尾：不往下多跳一行", normalize(element.style.top) === "604.50px", element.style.top);
+	// 最后一行内容区顶边 602。
+	check("光标在最后一行行尾：不往下多跳一行", normalize(element.style.top) === "602.00px", element.style.top);
 }
 
 {
